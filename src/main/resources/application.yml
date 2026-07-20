@@ -1,0 +1,13 @@
+server:
+  port: 8080
+spring:
+  application:
+    name: teamd
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+  endpoint:
+    health:
+      show-details: never
