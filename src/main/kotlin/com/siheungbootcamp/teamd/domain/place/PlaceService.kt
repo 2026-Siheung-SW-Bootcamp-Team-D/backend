@@ -57,6 +57,7 @@ class PlaceService(
 
     fun searchAddress(boardId: String, principal: ParticipantPrincipal, query: String): AddressCandidateResponse {
         checks.requireBoard(principal, boardId)
+        validateQuery(query)
 
         val candidates = kakao.searchAddress(query)
         return AddressCandidateResponse(
@@ -74,6 +75,7 @@ class PlaceService(
 
     fun coord2Address(boardId: String, principal: ParticipantPrincipal, lon: Double, lat: Double): CoordinateAddressResponse {
         checks.requireBoard(principal, boardId)
+        if (lon < -180.0 || lon > 180.0 || lat < -90.0 || lat > 90.0) throw BusinessException(ErrorCode.INVALID_ARGUMENT)
 
         val result = kakao.coord2Address(lon, lat)
         return CoordinateAddressResponse(

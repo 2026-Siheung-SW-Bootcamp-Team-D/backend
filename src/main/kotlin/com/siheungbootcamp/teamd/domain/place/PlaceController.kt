@@ -156,7 +156,9 @@ class PlaceController(private val service: PlaceService) {
         if (raw == null) return null
         val parts = raw.split(",").map { it.trim().toDoubleOrNull() ?: throw BusinessException(ErrorCode.INVALID_ARGUMENT) }
         if (parts.size != 4) throw BusinessException(ErrorCode.INVALID_ARGUMENT)
-        return BoundingBox(minLon = parts[0], minLat = parts[1], maxLon = parts[2], maxLat = parts[3])
+        val box = BoundingBox(minLon = parts[0], minLat = parts[1], maxLon = parts[2], maxLat = parts[3])
+        if (box.minLon > box.maxLon || box.minLat > box.maxLat) throw BusinessException(ErrorCode.INVALID_ARGUMENT)
+        return box
     }
 
     private data class BoundingBox(val minLon: Double, val minLat: Double, val maxLon: Double, val maxLat: Double)
