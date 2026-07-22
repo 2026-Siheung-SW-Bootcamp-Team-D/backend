@@ -14,10 +14,13 @@ import org.springframework.test.web.servlet.delete
 import org.springframework.test.web.servlet.get
 import org.springframework.test.web.servlet.patch
 import org.springframework.test.web.servlet.post
+import org.springframework.test.web.servlet.put
 import org.testcontainers.junit.jupiter.Container
 import org.testcontainers.junit.jupiter.Testcontainers
 import org.testcontainers.postgresql.PostgreSQLContainer
 import tools.jackson.databind.ObjectMapper
+import java.time.Instant
+import java.time.temporal.ChronoUnit
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
@@ -40,9 +43,11 @@ class P3CommentContractTest(
     @Autowired private val jdbcClient: JdbcClient,
 ) {
     @Test
-    fun `V3-1 댓글 작성 및 목록 조회 E2E 흐름이 성공한다`() {
-        val host = createBoard("댓글 보드", "호스트")
+    fun `V3-1 댓글 작성 → 투표 생성 → 참여 → 종료 E2E 흐름이 성공한다`() {
+        val host = createBoard("댓글투표 보드", "호스트")
+        val member = join(host.inviteCode, "멤버")
         val place = createPlace(host, "테스트 장소")
+        val decoyPlace = createPlace(host, "다른 후보 장소")
 
         // 댓글 작성
         val commentBody = mockMvc.post("/api/v1/boards/${host.boardId}/places/${place.placeId}/comments") {
@@ -51,18 +56,48 @@ class P3CommentContractTest(
             content = """{"body":"여기 웨이팅이 길 수 있어요."}"""
         }.andExpect { status { isCreated() } }
             .andReturn().response.contentAsString
-
-        val comment = objectMapper.readTree(commentBody)
-        assertEquals("여기 웨이팅이 길 수 있어요.", comment.path("body").asText())
+        assertEquals("여기 웨이팅이 길 수 있어요.", objectMapper.readTree(commentBody).path("body").asText())
 
         // 댓글 목록 조회
         val listBody = mockMvc.get("/api/v1/boards/${host.boardId}/places/${place.placeId}/comments") {
             bearer(host.token)
         }.andExpect { status { isOk() } }
             .andReturn().response.contentAsString
+        assertEquals(1, objectMapper.readTree(listBody).path("items").size(), "방금 작성한 댓글이 목록에 있어야 함")
 
-        val comments = objectMapper.readTree(listBody).path("items")
-        assertEquals(1, comments.size(), "방금 작성한 댓글이 목록에 있어야 함")
+        // 호스트가 투표 생성 (해당 댓글이 달린 장소를 후보로)
+        val closesAt = Instant.now().plus(1, ChronoUnit.HOURS).toString()
+        val voteBody = mockMvc.post("/api/v1/boards/${host.boardId}/votes") {
+            bearer(host.token)
+            contentType = MediaType.APPLICATION_JSON
+            content = """{"placeIds":["${place.placeId}","${decoyPlace.placeId}"],"maxSelections":1,"anonymous":false,"closesAt":"$closesAt"}"""
+        }.andExpect { status { isCreated() } }
+            .andReturn().response.contentAsString
+        val voteId = objectMapper.readTree(voteBody).path("voteId").asText()
+
+        // 참여자가 투표 참여
+        mockMvc.put("/api/v1/boards/${host.boardId}/votes/$voteId/ballots/me") {
+            bearer(member)
+            contentType = MediaType.APPLICATION_JSON
+            content = """{"placeIds":["${place.placeId}"]}"""
+        }.andExpect { status { isOk() } }
+
+        // 호스트가 투표 조기 종료
+        mockMvc.patch("/api/v1/boards/${host.boardId}/votes/$voteId") {
+            bearer(host.token)
+            contentType = MediaType.APPLICATION_JSON
+            content = """{"status":"CLOSED"}"""
+        }.andExpect { status { isOk() } }
+
+        // 종료된 투표를 조회하면 CLOSED 상태와 참여자의 집계가 반영되어야 함
+        val finalBody = mockMvc.get("/api/v1/boards/${host.boardId}/votes/$voteId") {
+            bearer(host.token)
+        }.andExpect { status { isOk() } }
+            .andReturn().response.contentAsString
+        val finalVote = objectMapper.readTree(finalBody)
+        assertEquals("CLOSED", finalVote.path("status").asText())
+        val option = finalVote.path("options").first { it.path("placeId").asText() == place.placeId }
+        assertEquals(1, option.path("count").asInt(), "참여자 1명이 투표한 결과가 집계에 반영되어야 함")
     }
 
     @Test

@@ -1,5 +1,7 @@
 package com.siheungbootcamp.teamd.domain.vote
 
+import jakarta.persistence.EntityManagerFactory
+import org.hibernate.SessionFactory
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.context.SpringBootTest
@@ -22,6 +24,7 @@ import tools.jackson.databind.ObjectMapper
 import java.time.Instant
 import java.time.temporal.ChronoUnit
 import java.util.concurrent.CountDownLatch
+import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -44,6 +47,7 @@ class P3VoteContractTest(
     @Autowired private val mockMvc: MockMvc,
     @Autowired private val objectMapper: ObjectMapper,
     @Autowired private val jdbcClient: JdbcClient,
+    @Autowired private val entityManagerFactory: EntityManagerFactory,
 ) {
     @Test
     fun `V3-4 열린 투표는 보드당 1개만 허용되고 중복은 409 RESOURCE_CONFLICT를 반환한다`() {
@@ -51,19 +55,38 @@ class P3VoteContractTest(
         val place1 = createPlace(host, "장소1", 126.7, 37.3)
         val place2 = createPlace(host, "장소2", 127.0, 37.5)
         val closesAt = Instant.now().plus(1, ChronoUnit.HOURS).toString()
+        val requestBody = """{"placeIds":["${place1.placeId}","${place2.placeId}"],"maxSelections":1,"anonymous":false,"closesAt":"$closesAt"}"""
 
-        // 첫 번째 투표 생성 → 201
+        // 두 요청을 실제로 동시에 제출한다: 선조회 후 삽입만으로는 못 막는 경쟁 상태를
+        // 재현하려면 두 스레드가 같은 순간에 INSERT를 시도해야 한다.
+        val readyLatch = CountDownLatch(2)
+        val startLatch = CountDownLatch(1)
+        val executor = Executors.newFixedThreadPool(2)
+        val futures = (1..2).map {
+            executor.submit<Int> {
+                readyLatch.countDown()
+                startLatch.await()
+                mockMvc.post("/api/v1/boards/${host.boardId}/votes") {
+                    bearer(host.token)
+                    contentType = MediaType.APPLICATION_JSON
+                    content = requestBody
+                }.andReturn().response.status
+            }
+        }
+        readyLatch.await()
+        startLatch.countDown()
+        val statusCodes = futures.map { it.get() }
+        executor.shutdown()
+
+        assertEquals(1, statusCodes.count { it == 201 }, "동시 요청 중 정확히 하나만 201이어야 함: $statusCodes")
+        assertEquals(1, statusCodes.count { it == 409 }, "동시 요청 중 정확히 하나만 409여야 함: $statusCodes")
+
+        // 두 번째 성공/실패와 별개로, 이미 열린 투표가 있는 상태에서 다시 생성을 시도하면
+        // 여전히 409 RESOURCE_CONFLICT로 응답해야 한다 (오류 코드 계약 확인).
         mockMvc.post("/api/v1/boards/${host.boardId}/votes") {
             bearer(host.token)
             contentType = MediaType.APPLICATION_JSON
-            content = """{"placeIds":["${place1.placeId}","${place2.placeId}"],"maxSelections":1,"anonymous":false,"closesAt":"$closesAt"}"""
-        }.andExpect { status { isCreated() } }
-
-        // 두 번째 투표 생성 시도 → 409
-        mockMvc.post("/api/v1/boards/${host.boardId}/votes") {
-            bearer(host.token)
-            contentType = MediaType.APPLICATION_JSON
-            content = """{"placeIds":["${place1.placeId}","${place2.placeId}"],"maxSelections":1,"anonymous":false,"closesAt":"$closesAt"}"""
+            content = requestBody
         }.andExpect {
             status { isConflict() }
             jsonPath("$.error.code") { value("RESOURCE_CONFLICT") }
@@ -239,27 +262,38 @@ class P3VoteContractTest(
     }
 
     @Test
-    fun `V3-11 장소 목록 조회 시 N+1 쿼리가 발생하지 않는다`() {
-        val host = createBoard("N+1 검증 보드", "호스트")
-        // 5개 장소 생성 (rate limit 고려)
-        repeat(5) { i ->
-            createPlace(host, "테스트 장소 $i", 126.7 + i * 0.01, 37.3)
-        }
+    fun `V3-11 장소 목록 조회 쿼리 수는 장소 개수와 무관하게 상수다`() {
+        // 값이 맞는지가 아니라 "쿼리 실행 횟수가 장소 개수에 비례하지 않는다"를 직접 측정한다.
+        // 장소 3개 보드와 12개 보드에서 같은 목록 API를 호출했을 때 쿼리 실행 횟수가
+        // 같아야 commentCount 집계가 place_id IN (...) 단일 쿼리로 이뤄진다는 뜻이다.
+        val smallHost = createBoard("N+1 검증 보드 소", "호스트")
+        repeat(3) { i -> createPlace(smallHost, "장소 소 $i", 126.7 + i * 0.01, 37.3) }
 
-        // 장소 목록 조회 시 commentCount가 정상적으로 집계됨
-        val result = mockMvc.get("/api/v1/boards/${host.boardId}/places") {
-            bearer(host.token)
-        }.andExpect { status { isOk() } }
-            .andReturn().response.contentAsString
+        val largeHost = createBoard("N+1 검증 보드 대", "호스트")
+        repeat(12) { i -> createPlace(largeHost, "장소 대 $i", 126.7 + i * 0.01, 37.3) }
 
-        val places = objectMapper.readTree(result).path("items")
-        assertEquals(5, places.size(), "5개 장소가 조회되어야 함")
+        val statistics = entityManagerFactory.unwrap(SessionFactory::class.java).statistics
+        statistics.isStatisticsEnabled = true
 
-        // 모든 commentCount가 정상 값인지 확인 (N+1 최적화 검증)
-        places.forEach { place ->
-            val commentCount = place.path("commentCount").asInt()
-            assertEquals(0, commentCount, "댓글이 없으므로 commentCount는 0")
-        }
+        statistics.clear()
+        val smallResult = mockMvc.get("/api/v1/boards/${smallHost.boardId}/places") {
+            bearer(smallHost.token)
+        }.andExpect { status { isOk() } }.andReturn().response.contentAsString
+        val smallQueryCount = statistics.queryExecutionCount
+
+        statistics.clear()
+        val largeResult = mockMvc.get("/api/v1/boards/${largeHost.boardId}/places") {
+            bearer(largeHost.token)
+        }.andExpect { status { isOk() } }.andReturn().response.contentAsString
+        val largeQueryCount = statistics.queryExecutionCount
+
+        assertEquals(3, objectMapper.readTree(smallResult).path("items").size(), "3개 장소가 조회되어야 함")
+        assertEquals(12, objectMapper.readTree(largeResult).path("items").size(), "12개 장소가 조회되어야 함")
+        assertEquals(
+            smallQueryCount,
+            largeQueryCount,
+            "장소 개수가 3개(쿼리 ${smallQueryCount}회)에서 12개(쿼리 ${largeQueryCount}회)로 늘어도 쿼리 실행 횟수는 동일해야 함(N+1 없음)",
+        )
     }
 
     @Test
