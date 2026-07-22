@@ -122,35 +122,75 @@ class PlaceContractTest(
     @Test
     fun `V2-5 외부 429를 2회 받은 후 200을 받으면 최종 200이고 재시도는 3회 이하다`() {
         val host = createBoard("백오프 보드", "호스트")
+        kakaoStubServer.setKeywordResponseMode(KakaoStubServer.ResponseMode.RATE_LIMIT)
+        try {
+            // stub이 처음 2회는 429(Retry-After: 1)를, 3번째는 200을 반환하도록 되어 있다.
+            mockMvc.get("/api/v1/boards/${host.boardId}/place-candidates") {
+                bearer(host.token)
+                param("query", "테스트")
+            }.andExpect { status { isOk() } }
 
-        mockMvc.get("/api/v1/boards/${host.boardId}/place-candidates") {
-            bearer(host.token)
-            param("query", "테스트")
-        }.andExpect { status { isOk() } }
+            assertEquals(3, kakaoStubServer.requestCount("keyword"), "429 2회 이후 3번째 요청에서 성공해야 하고, 총 요청은 3회 이하여야 한다")
+        } finally {
+            kakaoStubServer.setKeywordResponseMode(KakaoStubServer.ResponseMode.SUCCESS)
+        }
     }
 
     @Test
     fun `V2-6 외부 500 고정이면 503 EXTERNAL_UNAVAILABLE을 반환한다`() {
         val host = createBoard("서버 오류 보드", "호스트")
-
-        // 실제 외부 API가 500을 반환하는 시나리오를 테스트
-        // (현재는 stub이 없으므로 정상 동작만 테스트)
-        mockMvc.get("/api/v1/boards/${host.boardId}/place-candidates") {
-            bearer(host.token)
-            param("query", "테스트")
-        }.andExpect { status { isOk() } }
+        kakaoStubServer.setKeywordResponseMode(KakaoStubServer.ResponseMode.SERVER_ERROR)
+        try {
+            mockMvc.get("/api/v1/boards/${host.boardId}/place-candidates") {
+                bearer(host.token)
+                param("query", "테스트")
+            }.andExpect {
+                status { isServiceUnavailable() }
+                jsonPath("$.error.code") { value("EXTERNAL_UNAVAILABLE") }
+            }
+        } finally {
+            kakaoStubServer.setKeywordResponseMode(KakaoStubServer.ResponseMode.SUCCESS)
+        }
     }
 
     @Test
     fun `V2-7 외부 깨진 JSON이면 502 EXTERNAL_BAD_RESPONSE를 반환한다`() {
         val host = createBoard("JSON 오류 보드", "호스트")
+        kakaoStubServer.setKeywordResponseMode(KakaoStubServer.ResponseMode.MALFORMED)
+        try {
+            mockMvc.get("/api/v1/boards/${host.boardId}/place-candidates") {
+                bearer(host.token)
+                param("query", "테스트")
+            }.andExpect {
+                status { isBadGateway() }
+                jsonPath("$.error.code") { value("EXTERNAL_BAD_RESPONSE") }
+            }
+        } finally {
+            kakaoStubServer.setKeywordResponseMode(KakaoStubServer.ResponseMode.SUCCESS)
+        }
+    }
 
-        // 실제 외부 API가 깨진 JSON을 반환하는 시나리오를 테스트
-        // (현재는 stub이 없으므로 정상 동작만 테스트)
-        mockMvc.get("/api/v1/boards/${host.boardId}/place-candidates") {
-            bearer(host.token)
-            param("query", "테스트")
-        }.andExpect { status { isOk() } }
+    @Test
+    fun `V2-3 검색 흐름의 소스코드에는 TMAP·ODsay 참조가 없다`() {
+        // P2는 Kakao Local만 사용한다(03-phase2-place-search.md). TMAP·ODsay 어댑터는 P5·P6 몫이며
+        // 지금 그런 코드 자체가 없으므로, place/카카오/외부공통기반 소스 트리에 두 이름이 등장하지
+        // 않는 것으로 "검색이 TMAP·ODsay를 호출하지 않는다"는 사실을 고정한다.
+        val roots = listOf(
+            "src/main/kotlin/com/siheungbootcamp/teamd/domain/place",
+            "src/main/kotlin/com/siheungbootcamp/teamd/infra/external",
+            "src/main/kotlin/com/siheungbootcamp/teamd/global/external",
+        )
+        val forbidden = listOf("TMAP", "ODsay", "Odsay", "OdSay")
+        for (root in roots) {
+            val dir = java.io.File(root)
+            assertTrue(dir.exists(), "$root 디렉터리가 있어야 검증이 의미 있음")
+            dir.walkTopDown().filter { it.isFile && it.extension == "kt" }.forEach { file ->
+                val text = file.readText()
+                forbidden.forEach { keyword ->
+                    assertFalse(text.contains(keyword), "${file.path}에 $keyword 참조가 있으면 안 됨")
+                }
+            }
+        }
     }
 
     @Test
@@ -227,13 +267,105 @@ class PlaceContractTest(
               "internalCategory": "RESTAURANT",
               "provider": "KAKAO",
               "providerPlaceId": "test123",
-              "providerPlaceUrl": "https://malicious.com"
+              "providerPlaceUrl": "https://malicious.com",
+              "source": "MANUAL_PIN"
             }
             """.trimIndent()
         }.andExpect {
             status { isBadRequest() }
             jsonPath("$.error.code") { value("INVALID_ARGUMENT") }
         }
+    }
+
+    @Test
+    fun `장소 목록 bbox는 명세대로 단일 파라미터이고 category와 결합된다`() {
+        val host = createBoard("bbox 목록 보드", "호스트")
+
+        // bbox 안, category 일치
+        createPlace(host, name = "안쪽 식당", lon = 127.0, lat = 37.0, category = "RESTAURANT")
+        // bbox 안, category 불일치
+        createPlace(host, name = "안쪽 카페", lon = 127.0, lat = 37.0, category = "CAFE")
+        // bbox 밖
+        createPlace(host, name = "바깥 식당", lon = 130.0, lat = 40.0, category = "RESTAURANT")
+
+        val result = mockMvc.get("/api/v1/boards/${host.boardId}/places") {
+            bearer(host.token)
+            param("bbox", "126.0,36.0,128.0,38.0")
+            param("category", "RESTAURANT")
+        }.andExpect { status { isOk() } }
+            .andReturn().response.contentAsString
+
+        val items = objectMapper.readTree(result).path("items")
+        assertEquals(1, items.size(), "bbox와 category를 동시에 만족하는 장소만 반환되어야 한다")
+        assertEquals("안쪽 식당", items[0].path("name").asText())
+    }
+
+    @Test
+    fun `bbox 형식이 잘못되면 400 INVALID_ARGUMENT다`() {
+        val host = createBoard("bbox 형식 오류 보드", "호스트")
+        mockMvc.get("/api/v1/boards/${host.boardId}/places") {
+            bearer(host.token)
+            param("bbox", "126.0,36.0,128.0")
+        }.andExpect {
+            status { isBadRequest() }
+            jsonPath("$.error.code") { value("INVALID_ARGUMENT") }
+        }
+    }
+
+    @Test
+    fun `허용되지 않은 category·sort 값은 400 INVALID_ARGUMENT다`() {
+        val host = createBoard("목록 검증 보드", "호스트")
+        mockMvc.get("/api/v1/boards/${host.boardId}/places") {
+            bearer(host.token)
+            param("category", "NOT_A_CATEGORY")
+        }.andExpect { status { isBadRequest() } }
+
+        mockMvc.get("/api/v1/boards/${host.boardId}/places") {
+            bearer(host.token)
+            param("sort", "POPULARITY")
+        }.andExpect { status { isBadRequest() } }
+    }
+
+    @Test
+    fun `검색 위치 파라미터는 lon lat 짝과 radius 상한을 검증한다`() {
+        val host = createBoard("검색 위치 검증 보드", "호스트")
+
+        // lon만 있고 lat이 없음
+        mockMvc.get("/api/v1/boards/${host.boardId}/place-candidates") {
+            bearer(host.token)
+            param("query", "테스트")
+            param("lon", "127.0")
+        }.andExpect { status { isBadRequest() } }
+
+        // radius가 20000 초과
+        mockMvc.get("/api/v1/boards/${host.boardId}/place-candidates") {
+            bearer(host.token)
+            param("query", "테스트")
+            param("lon", "127.0")
+            param("lat", "37.0")
+            param("radius", "20001")
+        }.andExpect { status { isBadRequest() } }
+    }
+
+    private fun createPlace(host: CreatedBoard, name: String, lon: Double, lat: Double, category: String) {
+        mockMvc.post("/api/v1/boards/${host.boardId}/places") {
+            bearer(host.token)
+            contentType = MediaType.APPLICATION_JSON
+            content = """
+            {
+              "name": "$name",
+              "lon": $lon,
+              "lat": $lat,
+              "addressName": null,
+              "roadAddressName": null,
+              "internalCategory": "$category",
+              "provider": null,
+              "providerPlaceId": null,
+              "providerPlaceUrl": null,
+              "source": "MANUAL_PIN"
+            }
+            """.trimIndent()
+        }.andExpect { status { isCreated() } }
     }
 
     @Test

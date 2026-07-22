@@ -63,34 +63,39 @@ class KakaoStubServer(port: Int = 0) : AutoCloseable {
         val query = exchange.requestURI.rawQuery.split("&")
             .find { it.startsWith("query=") }?.substring(6) ?: ""
 
+        val successBody = """
+        {
+          "documents": [
+            {
+              "id": "123456",
+              "place_name": "테스트 장소",
+              "category_name": "음식점",
+              "address_name": "서울 강남구 테스트동",
+              "road_address_name": "서울 강남구 테스트로 123",
+              "x": 127.0,
+              "y": 37.0,
+              "place_url": "https://place.map.kakao.com/123456",
+              "distance": 100
+            }
+          ]
+        }
+        """.trimIndent()
+
         when (keywordMode) {
             ResponseMode.SUCCESS -> {
-                val response = """
-                {
-                  "documents": [
-                    {
-                      "id": "123456",
-                      "place_name": "테스트 장소",
-                      "category_name": "음식점",
-                      "address_name": "서울 강남구 테스트동",
-                      "road_address_name": "서울 강남구 테스트로 123",
-                      "x": 127.0,
-                      "y": 37.0,
-                      "place_url": "https://place.map.kakao.com/123456",
-                      "distance": 100
-                    }
-                  ]
-                }
-                """.trimIndent()
-                sendResponse(exchange, 200, response)
+                sendResponse(exchange, 200, successBody)
             }
             ResponseMode.EMPTY -> {
                 sendResponse(exchange, 200, """{"documents":[]}""")
             }
             ResponseMode.RATE_LIMIT -> {
-                val retryAfter = if (count.get() < 2) "1" else "10"
-                exchange.responseHeaders.set("Retry-After", retryAfter)
-                sendResponse(exchange, 429, """{"error":"rate_limit"}""")
+                // 처음 2회는 429(Retry-After: 1s), 3번째 요청부터는 200으로 회복한다(V2-5).
+                if (count.get() <= 2) {
+                    exchange.responseHeaders.set("Retry-After", "1")
+                    sendResponse(exchange, 429, """{"error":"rate_limit"}""")
+                } else {
+                    sendResponse(exchange, 200, successBody)
+                }
             }
             ResponseMode.SERVER_ERROR -> {
                 sendResponse(exchange, 500, """{"error":"server_error"}""")
