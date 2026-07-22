@@ -4,10 +4,12 @@ import com.siheungbootcamp.teamd.global.auth.CurrentParticipant
 import com.siheungbootcamp.teamd.global.auth.ParticipantPrincipal
 import com.siheungbootcamp.teamd.global.ratelimit.RateLimit
 import com.siheungbootcamp.teamd.global.ratelimit.RateLimitKey
+import com.siheungbootcamp.teamd.global.ratelimit.RateLimitScope
 import jakarta.validation.Valid
 import org.springframework.boot.context.properties.ConfigurationProperties
 import org.springframework.boot.context.properties.EnableConfigurationProperties
 import org.springframework.http.ResponseEntity
+import org.springframework.http.HttpHeaders
 import org.springframework.web.bind.annotation.*
 import java.net.URI
 import io.swagger.v3.oas.annotations.Operation
@@ -31,7 +33,9 @@ class BoardController(private val service: BoardService, private val properties:
     @ApiResponse(responseCode = "400", description = "이름·기간·닉네임 검증 실패")
     fun create(@Valid @RequestBody request: CreateBoardRequest): ResponseEntity<CreateBoardResponse> {
         val response = service.create(request, properties.frontendBaseUrl)
-        return ResponseEntity.created(URI.create("/api/v1/boards/${response.board.boardId}")).body(response)
+        return ResponseEntity.created(URI.create("/api/v1/boards/${response.board.boardId}"))
+            .header(HttpHeaders.CACHE_CONTROL, "private, no-store")
+            .body(response)
     }
 
     @GetMapping("/boards/{boardId}")
@@ -39,7 +43,7 @@ class BoardController(private val service: BoardService, private val properties:
     @SecurityRequirement(name = "participantToken")
     @ApiResponse(responseCode = "200", description = "조회 성공")
     @ApiResponse(responseCode = "404", description = "보드가 없거나 다른 보드 토큰")
-    @RateLimit(permits = 60, windowSeconds = 60, key = RateLimitKey.PARTICIPANT)
+    @RateLimit(permits = 60, windowSeconds = 60, key = RateLimitKey.PARTICIPANT, scope = RateLimitScope.PARTICIPANT_GLOBAL)
     fun get(@PathVariable boardId: String, @Parameter(hidden = true) @CurrentParticipant principal: ParticipantPrincipal) = service.get(boardId, principal)
 
     @PatchMapping("/boards/{boardId}")
@@ -48,13 +52,13 @@ class BoardController(private val service: BoardService, private val properties:
     @ApiResponse(responseCode = "200", description = "수정 성공")
     @ApiResponse(responseCode = "403", description = "HOST가 아님")
     @ApiResponse(responseCode = "409", description = "이미 종료된 보드")
-    @RateLimit(permits = 60, windowSeconds = 60, key = RateLimitKey.PARTICIPANT)
+    @RateLimit(permits = 60, windowSeconds = 60, key = RateLimitKey.PARTICIPANT, scope = RateLimitScope.PARTICIPANT_GLOBAL)
     fun patch(@PathVariable boardId: String, @Parameter(hidden = true) @CurrentParticipant principal: ParticipantPrincipal, @Valid @RequestBody request: PatchBoardRequest) = service.patch(boardId, principal, request)
 
     @GetMapping("/boards/{boardId}/invitation")
     @Operation(summary = "현재 초대 정보 조회", description = "HOST에게 저장된 초대 코드 원문과 URL, 만료 시각을 반환합니다.")
     @SecurityRequirement(name = "participantToken")
-    @RateLimit(permits = 60, windowSeconds = 60, key = RateLimitKey.PARTICIPANT)
+    @RateLimit(permits = 60, windowSeconds = 60, key = RateLimitKey.PARTICIPANT, scope = RateLimitScope.PARTICIPANT_GLOBAL)
     fun invitation(@PathVariable boardId: String, @Parameter(hidden = true) @CurrentParticipant principal: ParticipantPrincipal) = service.invitation(boardId, principal, properties.frontendBaseUrl)
 
     @GetMapping("/invitations/{inviteCode}")
@@ -71,13 +75,15 @@ class BoardController(private val service: BoardService, private val properties:
     @ApiResponse(responseCode = "409", description = "종료된 보드")
     fun join(@PathVariable inviteCode: String, @Valid @RequestBody request: JoinRequest): ResponseEntity<JoinResponse> {
         val response = service.join(inviteCode, request)
-        return ResponseEntity.created(URI.create("/api/v1/boards/${response.boardId}/participants/${response.participantId}")).body(response)
+        return ResponseEntity.created(URI.create("/api/v1/boards/${response.boardId}/participants/${response.participantId}"))
+            .header(HttpHeaders.CACHE_CONTROL, "private, no-store")
+            .body(response)
     }
 
     @GetMapping("/boards/{boardId}/participants")
     @Operation(summary = "참여자 목록", description = "본인 출발지는 상세 정보를, 타인 출발지는 registered 여부만 반환합니다.")
     @SecurityRequirement(name = "participantToken")
-    @RateLimit(permits = 60, windowSeconds = 60, key = RateLimitKey.PARTICIPANT)
+    @RateLimit(permits = 60, windowSeconds = 60, key = RateLimitKey.PARTICIPANT, scope = RateLimitScope.PARTICIPANT_GLOBAL)
     fun participants(@PathVariable boardId: String, @Parameter(hidden = true) @CurrentParticipant principal: ParticipantPrincipal) = service.list(boardId, principal)
 
     @PatchMapping("/boards/{boardId}/participants/me")
@@ -86,6 +92,6 @@ class BoardController(private val service: BoardService, private val properties:
     @ApiResponse(responseCode = "200", description = "수정 성공")
     @ApiResponse(responseCode = "409", description = "종료된 보드 또는 활성 지역 찾기 작업")
     @RequiresBoardOpen
-    @RateLimit(permits = 60, windowSeconds = 60, key = RateLimitKey.PARTICIPANT)
+    @RateLimit(permits = 60, windowSeconds = 60, key = RateLimitKey.PARTICIPANT, scope = RateLimitScope.PARTICIPANT_GLOBAL)
     fun patchMe(@PathVariable boardId: String, @Parameter(hidden = true) @CurrentParticipant principal: ParticipantPrincipal, @Valid @RequestBody request: PatchMeRequest) = service.patchMe(boardId, principal, request)
 }
