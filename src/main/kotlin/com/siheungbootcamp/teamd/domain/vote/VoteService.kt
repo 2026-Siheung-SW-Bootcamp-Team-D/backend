@@ -8,6 +8,7 @@ import com.siheungbootcamp.teamd.global.web.PageResponse
 import com.siheungbootcamp.teamd.domain.board.BoardRepository
 import com.siheungbootcamp.teamd.domain.board.ParticipantRepository
 import com.siheungbootcamp.teamd.domain.place.PlaceRepository
+import org.springframework.dao.DataIntegrityViolationException
 import org.springframework.data.domain.Pageable
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
@@ -41,6 +42,12 @@ class VoteService(
 
         // Validate candidate count
         if (request.placeIds.size < 2 || request.placeIds.size > 10) {
+            throw BusinessException(ErrorCode.INVALID_ARGUMENT)
+        }
+
+        // 중복 후보는 잘못된 클라이언트 입력이다. 걸러내지 않으면 아래 VoteOption 저장 루프에서
+        // (vote_id, place_id) 유니크 제약을 위반해 "이미 열린 투표가 있다"는 409로 오인될 수 있다.
+        if (request.placeIds.distinct().size != request.placeIds.size) {
             throw BusinessException(ErrorCode.INVALID_ARGUMENT)
         }
 
@@ -83,10 +90,12 @@ class VoteService(
             }
 
             return mapVoteToListResponse(savedVote, request.placeIds.size)
-        } catch (e: Exception) {
-            // If it's a constraint violation about open vote, convert to 409
-            if (e.cause?.message?.contains("vote (board_id)") == true ||
-                e.message?.contains("unique") == true) {
+        } catch (e: DataIntegrityViolationException) {
+            // 보드당 열린 투표 1개 제약(uq_vote_open_per_board, V1__baseline.sql)만 409로 변환한다.
+            // 다른 무결성 위반(예: VoteOption의 (vote_id, place_id) 유니크)은 위에서 이미
+            // 중복 placeIds를 걸러냈으므로 발생하면 예상 밖의 오류이니 그대로 전파한다.
+            val rootMessage = generateSequence(e as Throwable) { it.cause }.last().message
+            if (rootMessage?.contains("uq_vote_open_per_board") == true) {
                 throw BusinessException(ErrorCode.RESOURCE_CONFLICT)
             }
             throw e
@@ -107,9 +116,15 @@ class VoteService(
         } else null
 
         val page = votes.findByBoardIdAndStatus(boardId_internal, voteStatus, pageable)
+        val voteIds = page.content.map { it.id ?: throw BusinessException(ErrorCode.INTERNAL_ERROR) }
+        val optionCountByVoteId = if (voteIds.isEmpty()) {
+            emptyMap()
+        } else {
+            options.countByVoteIds(voteIds).associate { (voteId, count) -> voteId as Long to (count as Long).toInt() }
+        }
         return PageResponse(
             items = page.content.map { vote ->
-                val optionCount = options.findByVoteId(vote.id ?: throw BusinessException(ErrorCode.INTERNAL_ERROR)).size
+                val optionCount = optionCountByVoteId[vote.id] ?: 0
                 VoteListItemResponse(
                     voteId = vote.publicId,
                     status = vote.status.name,
@@ -267,6 +282,12 @@ class VoteService(
     fun close(boardId: String, voteId: String, principal: ParticipantPrincipal, request: CloseVoteRequest) {
         checks.requireBoard(principal, boardId)
         checks.requireHost(principal)
+
+        // 이 엔드포인트가 표현할 수 있는 유일한 전이는 조기 종료(CLOSED)뿐이다.
+        // request.status에 다른 값이 와도 조용히 무시하지 않고 400으로 거부한다.
+        if (request.status != "CLOSED") {
+            throw BusinessException(ErrorCode.INVALID_ARGUMENT)
+        }
 
         val board = boards.findByPublicId(boardId) ?: throw BusinessException(ErrorCode.RESOURCE_NOT_FOUND)
         val boardId_internal = board.id ?: throw BusinessException(ErrorCode.INTERNAL_ERROR)

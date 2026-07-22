@@ -47,7 +47,7 @@ class VoteController(
         @RequestParam(defaultValue = "1") page: Int,
         @RequestParam(defaultValue = "20") size: Int,
     ): ResponseEntity<PageResponse<VoteListItemResponse>> {
-        val pageable = PageRequest.of(page - 1, size.coerceIn(1, 50))
+        val pageable = PageRequest.of(maxOf(0, page - 1), size.coerceIn(1, 50))
         val result = service.list(boardId, principal, status, pageable)
         return ResponseEntity.ok(result)
     }
