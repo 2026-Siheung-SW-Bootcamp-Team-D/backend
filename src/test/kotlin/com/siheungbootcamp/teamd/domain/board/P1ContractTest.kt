@@ -21,6 +21,9 @@ import org.testcontainers.junit.jupiter.Testcontainers
 import org.testcontainers.postgresql.PostgreSQLContainer
 import tools.jackson.databind.ObjectMapper
 import java.time.OffsetDateTime
+import java.time.LocalDate
+import java.time.ZoneId
+import java.time.Instant
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
@@ -126,6 +129,78 @@ class P1ContractTest(
             jsonPath("$.paths['/api/v1/boards/{boardId}'].get.parameters.length()") { value(1) }
             jsonPath("$.paths['/api/v1/boards/{boardId}'].get.parameters[0].name") { value("boardId") }
         }
+    }
+
+    @Test
+    fun `오늘은 거부하고 내일은 허용하며 보드 이름 앞뒤 공백을 제거한다`() {
+        val today = LocalDate.now(ZoneId.of("Asia/Seoul"))
+        mockMvc.post("/api/v1/boards") {
+            contentType = MediaType.APPLICATION_JSON
+            content = """{"name":"오늘 보드","dateRange":{"start":"$today","end":"$today"},"hostNickname":"호스트"}"""
+        }.andExpect { status { isBadRequest() }; jsonPath("$.error.code") { value("INVALID_ARGUMENT") } }
+
+        val tomorrow = today.plusDays(1)
+        mockMvc.post("/api/v1/boards") {
+            contentType = MediaType.APPLICATION_JSON
+            content = """{"name":"  내일 보드  ","dateRange":{"start":"$tomorrow","end":"$tomorrow"},"hostNickname":"호스트"}"""
+        }.andExpect { status { isCreated() }; jsonPath("$.board.name") { value("내일 보드") } }
+    }
+
+    @Test
+    fun `초대 코드는 공백과 대소문자를 무시해 확인하고 참여한다`() {
+        val host = createBoard("정규화 보드", "호스트")
+        val input = "  ${host.inviteCode.lowercase()}  "
+        mockMvc.get("/api/v1/invitations/$input").andExpect { status { isOk() }; jsonPath("$.boardId") { value(host.boardId) } }
+        mockMvc.post("/api/v1/invitations/$input/participants") {
+            contentType = MediaType.APPLICATION_JSON; content = """{"nickname":"멤버"}"""
+        }.andExpect { status { isCreated() } }
+    }
+
+    @Test
+    fun `참여 토큰을 발급하는 두 응답은 캐시를 금지한다`() {
+        val created = mockMvc.post("/api/v1/boards") {
+            contentType = MediaType.APPLICATION_JSON
+            content = """{"name":"캐시 보드","dateRange":{"start":"2099-01-01","end":"2099-01-01"},"hostNickname":"호스트"}"""
+        }.andExpect { status { isCreated() }; header { string("Cache-Control", "private, no-store") } }
+            .andReturn().response.contentAsString
+        val inviteCode = objectMapper.readTree(created)["invitation"]["inviteCode"].asText()
+        mockMvc.post("/api/v1/invitations/$inviteCode/participants") {
+            contentType = MediaType.APPLICATION_JSON; content = """{"nickname":"멤버"}"""
+        }.andExpect { status { isCreated() }; header { string("Cache-Control", "private, no-store") } }
+    }
+
+    @Test
+    fun `잘못된 날짜와 origin enum은 400 INVALID_ARGUMENT다`() {
+        mockMvc.post("/api/v1/boards") {
+            contentType = MediaType.APPLICATION_JSON
+            content = """{"name":"파싱 보드","dateRange":{"start":"not-a-date","end":"2099-01-01"},"hostNickname":"호스트"}"""
+        }.andExpect { status { isBadRequest() }; jsonPath("$.error.code") { value("INVALID_ARGUMENT") } }
+
+        val host = createBoard("enum 보드", "호스트")
+        mockMvc.patch("/api/v1/boards/${host.boardId}/participants/me") {
+            bearer(host.token); contentType = MediaType.APPLICATION_JSON
+            content = """{"origin":{"label":"역","lon":126.7,"lat":37.3,"source":"UNKNOWN"}}"""
+        }.andExpect { status { isBadRequest() }; jsonPath("$.error.code") { value("INVALID_ARGUMENT") } }
+    }
+
+    @Test
+    fun `참여자 전체 60회 제한은 여러 엔드포인트가 같은 버킷을 사용한다`() {
+        val host = createBoard("제한 보드", "호스트")
+        val rateLimited = (1..70).any { requestNumber ->
+            val path = if (requestNumber % 2 == 0) "/api/v1/boards/${host.boardId}" else "/api/v1/boards/${host.boardId}/participants"
+            mockMvc.get(path) { bearer(host.token) }.andReturn().response.status == 429
+        }
+        assertTrue(rateLimited, "서로 다른 보호 API가 참여자 전체 버킷을 공유해야 한다")
+    }
+
+    @Test
+    fun `보드 수정 응답 updatedAt은 생성 시각보다 뒤다`() {
+        val host = createBoard("시간 보드", "호스트")
+        val before = mockMvc.get("/api/v1/boards/${host.boardId}") { bearer(host.token) }.andReturn().response.contentAsString
+        val after = mockMvc.patch("/api/v1/boards/${host.boardId}") {
+            bearer(host.token); contentType = MediaType.APPLICATION_JSON; content = """{"name":"수정 시간 보드"}"""
+        }.andReturn().response.contentAsString
+        assertTrue(Instant.parse(objectMapper.readTree(after)["updatedAt"].asText()).isAfter(Instant.parse(objectMapper.readTree(before)["updatedAt"].asText())))
     }
 
     @Test
