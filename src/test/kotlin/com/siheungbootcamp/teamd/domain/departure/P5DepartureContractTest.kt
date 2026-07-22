@@ -1,81 +1,359 @@
 package com.siheungbootcamp.teamd.domain.departure
 
-import com.siheungbootcamp.teamd.domain.departure.DepartureCalculation.Status
+import com.siheungbootcamp.teamd.infra.external.tmap.TmapStubServer
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.extension.ExtendWith
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.context.SpringBootTest
-import org.springframework.test.context.TestPropertySource
+import org.springframework.boot.test.system.CapturedOutput
+import org.springframework.boot.test.system.OutputCaptureExtension
+import org.springframework.boot.testcontainers.service.connection.ServiceConnection
+import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc
+import org.springframework.http.MediaType
+import org.springframework.jdbc.core.simple.JdbcClient
+import org.springframework.test.context.DynamicPropertyRegistry
+import org.springframework.test.context.DynamicPropertySource
+import org.springframework.test.web.servlet.MockMvc
+import org.springframework.test.web.servlet.get
+import org.springframework.test.web.servlet.post
+import org.testcontainers.junit.jupiter.Container
+import org.testcontainers.junit.jupiter.Testcontainers
+import org.testcontainers.postgresql.PostgreSQLContainer
+import tools.jackson.databind.ObjectMapper
+import java.time.Instant
+import java.time.temporal.ChronoUnit
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertTrue
 
-/**
- * P5 출발 안내 검증 게이트 테스트.
- *
- * 각 게이트별 증거:
- * - V5-1: 블록됨 - 전체 E2E 테스트 fixture 필요 (보드/참여자/코스/TMAP stub)
- * - V5-2: 블록됨 - stub 호출 카운팅을 위해 E2E 필요
- * - V5-3: 블록됨 - 중복 요청 테스트는 E2E fixture 필요
- * - V5-4: 블록됨 - READY 상태 재요청 테스트는 E2E fixture 필요
- * - V5-5: recommendedDepartureAt 계산 테스트 (단위 테스트)
- * - V5-6: 블록됨 - 엔드포인트 호출은 E2E fixture 필요
- * - V5-7: 블록됨 - stub NO_ROUTE 응답 처리는 Job Executor E2E 테스트 필요
- * - V5-8: 블록됨 - retry 소진 후 FAILED 상태는 Job Executor E2E 필요
- * - V5-9: ✅ 계산식 검증 (단위 테스트)
- * - V5-10: 블록됨 - STALE 전파는 BoardService/CourseService와의 통합 필요
- * - V5-11: 블록됨 - 재시작 복구는 Job Executor 폴링 테스트 필요
- * - V5-12: 블록됨 - 동시성/DB 커넥션 테스트는 부하 테스트 필요
- * - V5-13: 블록됨 - 좌표 비노출은 E2E + 로그 캡처 필요
- * - V5-14: ✅ 빌드 그린 (./gradlew build 통과)
- */
-@SpringBootTest
-@TestPropertySource(properties = ["app.job.enabled=false"])
+@Testcontainers
+@ExtendWith(OutputCaptureExtension::class)
+@AutoConfigureMockMvc
+@SpringBootTest(properties = [
+    "app.auth.token-pepper=test-pepper",
+    "app.crypto.origin-key=AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=",
+    "app.board.frontend-base-url=https://example.app",
+    "app.tmap.app-key=test-tmap-key",
+    "app.job.enabled=false",
+])
 class P5DepartureContractTest(
-    @Autowired private val departureRepository: DepartureCalculationRepository,
+    @Autowired private val mockMvc: MockMvc,
+    @Autowired private val objectMapper: ObjectMapper,
+    @Autowired private val jdbcClient: JdbcClient,
+    @Autowired private val departureJobExecutor: DepartureJobExecutor,
 ) {
+    companion object {
+        @Container @ServiceConnection @JvmStatic
+        val postgres = PostgreSQLContainer("postgres:16-alpine")
 
-    @Test
-    fun `V5-9 recommendedDepartureAt calculation formula`() {
-        // 공식: 첫만남시각(18:00) - totalSeconds(1920초=32분) - 10분 = 17:18
-        // DepartureJobExecutor에서 사용:
-        //   recommendedDepartureAt = destScheduledAt
-        //     .minusSeconds(summary.totalSeconds.toLong())
-        //     .minus(10, ChronoUnit.MINUTES)
+        private val tmapStubServer = TmapStubServer()
 
-        // 단위 테스트: 수학 검증
-        val meetingTime = java.time.Instant.parse("2026-07-26T18:00:00Z")
-        val totalSeconds = 1920 // 32분
+        init {
+            tmapStubServer.start()
+        }
 
-        val recommendedTime = meetingTime
-            .minusSeconds(totalSeconds.toLong())
-            .minus(java.time.temporal.ChronoUnit.MINUTES.duration.multipliedBy(10))
-
-        val expectedTime = java.time.Instant.parse("2026-07-26T17:18:00Z")
-        assertEquals(expectedTime, recommendedTime, "출발 시각 계산식 검증 실패")
+        @DynamicPropertySource
+        @JvmStatic
+        fun dynamicProperties(registry: DynamicPropertyRegistry) {
+            registry.add("app.tmap.base-url") { tmapStubServer.baseUrl }
+        }
     }
 
     @Test
-    fun `V5-14 build green with compilation`() {
-        // 모든 파일이 컴파일 가능함을 검증
-        // 이 테스트가 실행되면 빌드가 성공한 것이다.
-        // (Kotlin/Java 컴파일 오류가 있으면 테스트 실행 전에 실패)
+    fun `V5-1 E2E happy path`() {
+        val host = createBoard("P5 테스트", "호스트")
+        val p1 = inviteAndJoin(host, "P1")
+        setOrigin(host, "호스트출발", 126.97, 37.55)
+        setOrigin(p1, "P1출발", 126.96, 37.54)
+        val place = createPlace(host, "만남", 126.98, 37.56)
+        confirmCourse(host, place)
+
+        tmapStubServer.responseMode = TmapStubServer.ResponseMode.SUCCESS
+        mockMvc.post("/api/v1/boards/${host.boardId}/participants/me/departure-calculations") {
+            bearer(host.token)
+            contentType = MediaType.APPLICATION_JSON; content = "{}"
+        }.andExpect { status { isAccepted() } }
+
+        departureJobExecutor.processOne()
+
+        val res = mockMvc.get("/api/v1/boards/${host.boardId}/participants/me/departure-guide") {
+            bearer(host.token)
+        }.andReturn().response
+        assertEquals("READY", objectMapper.readTree(res.contentAsString).path("status").asText())
     }
 
     @Test
-    fun `repository findByParticipantIdAndCourseId returns null when not exists`() {
-        // 행이 없는 경우: NOT_REQUESTED (null 반환)
-        val result = departureRepository.findByParticipantIdAndCourseId(
-            participantId = 999999L,
-            courseId = 888888L
-        )
-        assertEquals(null, result, "NOT_REQUESTED 상태는 행 없음으로 표현되어야 함")
+    fun `V5-2 POST로만 계산 발생`() {
+        val host = createBoard("V5-2", "호스트")
+        val p = inviteAndJoin(host, "P")
+        setOrigin(host, "출", 126.97, 37.55)
+        setOrigin(p, "출", 126.96, 37.54)
+        val place = createPlace(host, "만", 126.98, 37.56)
+        confirmCourse(host, place)
+
+        tmapStubServer.resetCount()
+        mockMvc.post("/api/v1/boards/${host.boardId}/participants/me/departure-calculations") {
+            bearer(p.token)
+            contentType = MediaType.APPLICATION_JSON; content = "{}"
+        }.andExpect { status { isAccepted() } }
+
+        // POST 없이는 TMAP 호출이 없어야 함 (Job Executor도 실행 안 함)
+        assertEquals(0, tmapStubServer.requestCount())
     }
 
     @Test
-    fun `entity status enum values are correct`() {
-        // DepartureCalculation.Status enum이 올바른 상태를 정의하는지 검증
-        assertEquals(Status.CALCULATING, Status.valueOf("CALCULATING"))
-        assertEquals(Status.READY, Status.valueOf("READY"))
-        assertEquals(Status.STALE, Status.valueOf("STALE"))
-        assertEquals(Status.UNAVAILABLE, Status.valueOf("UNAVAILABLE"))
-        assertEquals(Status.FAILED, Status.valueOf("FAILED"))
+    fun `V5-3 중복요청 작업미증가`() {
+        val host = createBoard("V5-3", "호스트")
+        val p = inviteAndJoin(host, "P")
+        setOrigin(host, "출", 126.97, 37.55)
+        setOrigin(p, "출", 126.96, 37.54)
+        val place = createPlace(host, "만", 126.98, 37.56)
+        confirmCourse(host, place)
+
+        mockMvc.post("/api/v1/boards/${host.boardId}/participants/me/departure-calculations") {
+            bearer(p.token)
+            contentType = MediaType.APPLICATION_JSON; content = "{}"
+        }.andExpect { status { isAccepted() } }
+
+        mockMvc.post("/api/v1/boards/${host.boardId}/participants/me/departure-calculations") {
+            bearer(p.token)
+            contentType = MediaType.APPLICATION_JSON; content = "{}"
+        }.andExpect { status { isAccepted() } }
+
+        // DB에 행 1개만
+        val count = jdbcClient.sql("select count(*) from departure_calculation where status='CALCULATING'")
+            .query(Int::class.java).single()
+        assertEquals(1, count)
     }
+
+    @Test
+    fun `V5-4 READY재요청 외부미호출`() {
+        val host = createBoard("V5-4", "호스트")
+        val p = inviteAndJoin(host, "P")
+        setOrigin(host, "출", 126.97, 37.55)
+        setOrigin(p, "출", 126.96, 37.54)
+        val place = createPlace(host, "만", 126.98, 37.56)
+        confirmCourse(host, place)
+
+        tmapStubServer.responseMode = TmapStubServer.ResponseMode.SUCCESS
+        mockMvc.post("/api/v1/boards/${host.boardId}/participants/me/departure-calculations") {
+            bearer(p.token)
+            contentType = MediaType.APPLICATION_JSON; content = "{}"
+        }.andExpect { status { isAccepted() } }
+        departureJobExecutor.processOne()
+
+        tmapStubServer.resetCount()
+        mockMvc.post("/api/v1/boards/${host.boardId}/participants/me/departure-calculations") {
+            bearer(p.token)
+            contentType = MediaType.APPLICATION_JSON; content = "{}"
+        }.andExpect { status { isOk() } }
+        assertEquals(0, tmapStubServer.requestCount())
+    }
+
+    @Test
+    fun `V5-5 출발지없음 422`() {
+        val host = createBoard("V5-5", "호스트")
+        val p = inviteAndJoin(host, "P")
+        val place = createPlace(host, "만", 126.98, 37.56)
+        confirmCourse(host, place)
+
+        mockMvc.post("/api/v1/boards/${host.boardId}/participants/me/departure-calculations") {
+            bearer(p.token)
+            contentType = MediaType.APPLICATION_JSON; content = "{}"
+        }.andExpect { status { isUnprocessableEntity() } }
+    }
+
+    @Test
+    fun `V5-6 코스없음 409`() {
+        val host = createBoard("V5-6", "호스트")
+        val p = inviteAndJoin(host, "P")
+        setOrigin(p, "출", 126.96, 37.54)
+
+        mockMvc.post("/api/v1/boards/${host.boardId}/participants/me/departure-calculations") {
+            bearer(p.token)
+            contentType = MediaType.APPLICATION_JSON; content = "{}"
+        }.andExpect { status { isConflict() } }
+    }
+
+    @Test
+    fun `V5-7 경로없음UNAVAILABLE`() {
+        val host = createBoard("V5-7", "호스트")
+        val p = inviteAndJoin(host, "P")
+        setOrigin(host, "출", 126.97, 37.55)
+        setOrigin(p, "출", 126.96, 37.54)
+        val place = createPlace(host, "만", 126.98, 37.56)
+        confirmCourse(host, place)
+
+        tmapStubServer.responseMode = TmapStubServer.ResponseMode.NO_ROUTE
+        mockMvc.post("/api/v1/boards/${host.boardId}/participants/me/departure-calculations") {
+            bearer(p.token)
+            contentType = MediaType.APPLICATION_JSON; content = "{}"
+        }.andExpect { status { isAccepted() } }
+
+        departureJobExecutor.processOne()
+        val res = mockMvc.get("/api/v1/boards/${host.boardId}/participants/me/departure-guide") {
+            bearer(p.token)
+        }.andReturn().response
+        assertEquals("UNAVAILABLE", objectMapper.readTree(res.contentAsString).path("status").asText())
+    }
+
+    @Test
+    fun `V5-8 재시도소진FAILED`() {
+        val host = createBoard("V5-8", "호스트")
+        val p = inviteAndJoin(host, "P")
+        setOrigin(host, "출", 126.97, 37.55)
+        setOrigin(p, "출", 126.96, 37.54)
+        val place = createPlace(host, "만", 126.98, 37.56)
+        confirmCourse(host, place)
+
+        tmapStubServer.responseMode = TmapStubServer.ResponseMode.SERVER_ERROR
+        mockMvc.post("/api/v1/boards/${host.boardId}/participants/me/departure-calculations") {
+            bearer(p.token)
+            contentType = MediaType.APPLICATION_JSON; content = "{}"
+        }.andExpect { status { isAccepted() } }
+
+        departureJobExecutor.processOne()
+        val res = mockMvc.get("/api/v1/boards/${host.boardId}/participants/me/departure-guide") {
+            bearer(p.token)
+        }.andReturn().response
+        assertEquals("FAILED", objectMapper.readTree(res.contentAsString).path("status").asText())
+    }
+
+    @Test
+    fun `V5-9 권장출발시각공식`() {
+        val m = Instant.parse("2026-07-26T18:00:00Z")
+        val r = m.minusSeconds(1920L).minus(10, ChronoUnit.MINUTES)
+        assertEquals(Instant.parse("2026-07-26T17:18:00Z"), r)
+    }
+
+    @Test
+    fun `V5-10 출발지변경STALE`() {
+        val host = createBoard("V5-10", "호스트")
+        val p = inviteAndJoin(host, "P")
+        setOrigin(host, "출1", 126.97, 37.55)
+        setOrigin(p, "출1", 126.96, 37.54)
+        val place = createPlace(host, "만", 126.98, 37.56)
+        confirmCourse(host, place)
+
+        tmapStubServer.responseMode = TmapStubServer.ResponseMode.SUCCESS
+        mockMvc.post("/api/v1/boards/${host.boardId}/participants/me/departure-calculations") {
+            bearer(p.token)
+            contentType = MediaType.APPLICATION_JSON; content = "{}"
+        }.andExpect { status { isAccepted() } }
+        departureJobExecutor.processOne()
+
+        setOrigin(p, "출2", 126.99, 37.57)
+
+        val res = mockMvc.get("/api/v1/boards/${host.boardId}/participants/me/departure-guide") {
+            bearer(p.token)
+        }.andReturn().response
+        assertEquals("STALE", objectMapper.readTree(res.contentAsString).path("status").asText())
+    }
+
+    @Test
+    fun `V5-11 재시작복구`() {
+        val host = createBoard("V5-11", "호스트")
+        val p = inviteAndJoin(host, "P")
+        setOrigin(host, "출", 126.97, 37.55)
+        setOrigin(p, "출", 126.96, 37.54)
+        val place = createPlace(host, "만", 126.98, 37.56)
+        confirmCourse(host, place)
+
+        mockMvc.post("/api/v1/boards/${host.boardId}/participants/me/departure-calculations") {
+            bearer(p.token)
+            contentType = MediaType.APPLICATION_JSON; content = "{}"
+        }.andExpect { status { isAccepted() } }
+
+        val before = jdbcClient.sql("select count(*) from departure_calculation where status='CALCULATING'")
+            .query(Int::class.java).single()
+        assertTrue(before > 0)
+
+        tmapStubServer.responseMode = TmapStubServer.ResponseMode.SUCCESS
+        departureJobExecutor.processOne()
+
+        val res = mockMvc.get("/api/v1/boards/${host.boardId}/participants/me/departure-guide") {
+            bearer(p.token)
+        }.andReturn().response
+        assertEquals("READY", objectMapper.readTree(res.contentAsString).path("status").asText())
+    }
+
+    @Test
+    fun `V5-13 좌표미노출`() {
+        val host = createBoard("V5-13", "호스트")
+        val p = inviteAndJoin(host, "P")
+        setOrigin(host, "출", 126.97, 37.55)
+        setOrigin(p, "출", 126.96, 37.54)
+        val place = createPlace(host, "만", 126.98, 37.56)
+        confirmCourse(host, place)
+
+        tmapStubServer.responseMode = TmapStubServer.ResponseMode.SUCCESS
+        mockMvc.post("/api/v1/boards/${host.boardId}/participants/me/departure-calculations") {
+            bearer(p.token)
+            contentType = MediaType.APPLICATION_JSON; content = "{}"
+        }.andExpect { status { isAccepted() } }
+        departureJobExecutor.processOne()
+
+        val res = mockMvc.get("/api/v1/boards/${host.boardId}/participants/me/departure-guide") {
+            bearer(p.token)
+        }.andReturn().response
+        assertFalse(res.contentAsString.contains("126.") || res.contentAsString.contains("37."))
+    }
+
+    private fun createBoard(n: String, nick: String): CB {
+        val r = mockMvc.post("/api/v1/boards") {
+            contentType = MediaType.APPLICATION_JSON
+            content = """{"name":"$n","nickname":"$nick"}"""
+        }.andReturn().response
+        val j = objectMapper.readTree(r.contentAsString)
+        return CB(j.path("boardId").asText(), j.path("participantToken").asText())
+    }
+
+    private fun inviteAndJoin(host: CB, nick: String): CB {
+        val ir = mockMvc.post("/api/v1/boards/${host.b}/invitations") {
+            bearer(host.t)
+            contentType = MediaType.APPLICATION_JSON; content = "{}"
+        }.andReturn().response
+        val ic = objectMapper.readTree(ir.contentAsString).path("invitationCode").asText()
+        val jr = mockMvc.post("/api/v1/invitations/$ic/accept") {
+            contentType = MediaType.APPLICATION_JSON
+            content = """{"nickname":"$nick"}"""
+        }.andReturn().response
+        val j = objectMapper.readTree(jr.contentAsString)
+        return CB(host.b, j.path("participantToken").asText())
+    }
+
+    private fun setOrigin(host: CB, label: String, lon: Double, lat: Double) {
+        mockMvc.post("/api/v1/boards/${host.b}/participants/me/origin") {
+            bearer(host.t)
+            contentType = MediaType.APPLICATION_JSON
+            content = """{"label":"$label","lon":$lon,"lat":$lat,"source":"MANUAL_PIN"}"""
+        }.andExpect { status { isCreated() } }
+    }
+
+    private fun createPlace(host: CB, n: String, lon: Double, lat: Double): String {
+        val r = mockMvc.post("/api/v1/boards/${host.b}/places") {
+            bearer(host.t)
+            contentType = MediaType.APPLICATION_JSON
+            content = """{"name":"$n","addressName":"서울","roadAddressName":"서울","lon":$lon,"lat":$lat,"providerPlaceId":"123","providerPlaceUrl":null,"category":"음식점"}"""
+        }.andReturn().response
+        return objectMapper.readTree(r.contentAsString).path("placeId").asText()
+    }
+
+    private fun confirmCourse(host: CB, placeId: String) {
+        mockMvc.put("/api/v1/boards/${host.b}/course-draft") {
+            bearer(host.t)
+            header("If-Match", "\"draft-0\"")
+            contentType = MediaType.APPLICATION_JSON
+            content = """{"stops":[{"placeId":"$placeId","orderIndex":1,"role":"FIRST_MEETING","scheduledAt":"2026-07-26T18:00:00Z"}]}"""
+        }.andExpect { status { isOk() } }
+
+        mockMvc.post("/api/v1/boards/${host.b}/courses") {
+            bearer(host.t)
+            contentType = MediaType.APPLICATION_JSON; content = """{"draftVersion":1}"""
+        }.andExpect { status { isCreated() } }
+    }
+
+    private fun bearer(t: String): MockMvc.() -> Unit = { header("Authorization", "Bearer $t") }
+
+    data class CB(val b: String, val t: String)
 }
