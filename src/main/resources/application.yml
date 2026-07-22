@@ -33,3 +33,6 @@ app:
     token-pepper: ${TOKEN_PEPPER}
   crypto:
     origin-key: ${ORIGIN_ENC_KEY}
+  kakao:
+    rest-key: ${KAKAO_REST_KEY:}
+    base-url: https://dapi.kakao.com
