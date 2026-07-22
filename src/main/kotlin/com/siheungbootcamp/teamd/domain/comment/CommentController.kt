@@ -2,6 +2,9 @@ package com.siheungbootcamp.teamd.domain.comment
 
 import com.siheungbootcamp.teamd.global.auth.CurrentParticipant
 import com.siheungbootcamp.teamd.global.auth.ParticipantPrincipal
+import com.siheungbootcamp.teamd.global.ratelimit.RateLimit
+import com.siheungbootcamp.teamd.global.ratelimit.RateLimitKey
+import com.siheungbootcamp.teamd.global.ratelimit.RateLimitScope
 import com.siheungbootcamp.teamd.global.web.PageResponse
 import io.swagger.v3.oas.annotations.Operation
 import io.swagger.v3.oas.annotations.tags.Tag
@@ -36,13 +39,14 @@ class CommentController(
         @RequestParam(defaultValue = "1") page: Int,
         @RequestParam(defaultValue = "20") size: Int,
     ): ResponseEntity<PageResponse<CommentResponse>> {
-        val pageable = PageRequest.of(page - 1, size.coerceIn(1, 50))
+        val pageable = PageRequest.of(maxOf(0, page - 1), size.coerceIn(1, 50))
         val result = service.list(boardId, placeId, principal, pageable)
         return ResponseEntity.ok(result)
     }
 
     @PostMapping
     @Operation(summary = "댓글 작성", description = "장소에 댓글을 작성한다. 참여자당 20회/분 rate limit.")
+    @RateLimit(permits = 20, windowSeconds = 60, key = RateLimitKey.PARTICIPANT, scope = RateLimitScope.ENDPOINT)
     fun create(
         @PathVariable boardId: String,
         @PathVariable placeId: String,

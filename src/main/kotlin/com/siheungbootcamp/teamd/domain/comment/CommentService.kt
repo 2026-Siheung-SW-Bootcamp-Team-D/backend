@@ -4,9 +4,6 @@ import com.siheungbootcamp.teamd.global.auth.AuthorizationChecks
 import com.siheungbootcamp.teamd.global.auth.ParticipantPrincipal
 import com.siheungbootcamp.teamd.global.error.BusinessException
 import com.siheungbootcamp.teamd.global.error.ErrorCode
-import com.siheungbootcamp.teamd.global.ratelimit.RateLimit
-import com.siheungbootcamp.teamd.global.ratelimit.RateLimitKey
-import com.siheungbootcamp.teamd.global.ratelimit.RateLimitScope
 import com.siheungbootcamp.teamd.global.web.PageResponse
 import com.siheungbootcamp.teamd.domain.board.BoardRepository
 import com.siheungbootcamp.teamd.domain.board.ParticipantRepository
@@ -53,7 +50,6 @@ class CommentService(
     }
 
     @Transactional
-    @RateLimit(permits = 20, windowSeconds = 60, key = RateLimitKey.PARTICIPANT, scope = RateLimitScope.ENDPOINT)
     fun create(boardId: String, placeId: String, principal: ParticipantPrincipal, request: CreateCommentRequest): CommentResponse {
         checks.requireBoard(principal, boardId)
         val board = boards.findByPublicId(boardId) ?: throw BusinessException(ErrorCode.RESOURCE_NOT_FOUND)

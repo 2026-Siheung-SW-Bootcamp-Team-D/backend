@@ -193,10 +193,12 @@ class P3CommentContractTest(
         val host = createBoard("댓글 페이지네이션 보드", "호스트")
         val place = createPlace(host, "테스트 장소")
 
-        // 25개 댓글 작성
+        // 25개 댓글 작성. 참여자당 20회/분 rate limit(V3-1 문서, RateLimitInterceptor)에
+        // 걸리지 않도록 여러 참여자로 나눠서 작성한다.
+        val authors = listOf(host.token, join(host.inviteCode, "멤버1"), join(host.inviteCode, "멤버2"))
         repeat(25) {
             mockMvc.post("/api/v1/boards/${host.boardId}/places/${place.placeId}/comments") {
-                bearer(host.token)
+                bearer(authors[it % authors.size])
                 contentType = MediaType.APPLICATION_JSON
                 content = """{"body":"댓글 $it"}"""
             }.andExpect { status { isCreated() } }

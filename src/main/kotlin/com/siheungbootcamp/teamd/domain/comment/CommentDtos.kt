@@ -1,16 +1,17 @@
 package com.siheungbootcamp.teamd.domain.comment
 
+import jakarta.validation.constraints.NotBlank
 import jakarta.validation.constraints.Size
 import java.time.Instant
 
 // Request DTOs
 
 data class CreateCommentRequest(
-    @field:Size(min = 1, max = 500) val body: String,
+    @field:NotBlank @field:Size(min = 1, max = 500) val body: String,
 )
 
 data class UpdateCommentRequest(
-    @field:Size(min = 1, max = 500) val body: String,
+    @field:NotBlank @field:Size(min = 1, max = 500) val body: String,
 )
 
 // Response DTOs

@@ -14,6 +14,7 @@ interface CommentRepository : JpaRepository<PlaceComment, Long> {
 
     @Query("""
         SELECT c FROM PlaceComment c
+        JOIN FETCH c.author
         WHERE c.place.id = :placeId
         AND c.deletedAt IS NULL
         ORDER BY c.createdAt DESC
