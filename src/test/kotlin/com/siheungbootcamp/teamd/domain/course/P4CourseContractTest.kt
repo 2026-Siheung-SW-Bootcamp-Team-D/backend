@@ -232,6 +232,33 @@ class P4CourseContractTest(
     }
 
     @Test
+    fun `저장된 초안의 장소가 나중에 삭제되면 GET 응답에서 placeDeleted가 true다`() {
+        val host = createBoard("초안 참조 장소 삭제 후 조회 보드", "호스트")
+        val meetingPlace = createPlace(host, "만남 장소", 126.97, 37.55)
+        val cafePlace = createPlace(host, "카페", 126.98, 37.56)
+        val now = Instant.now().plus(1, ChronoUnit.HOURS)
+
+        putDraft(host, getDraftETag(host), stopsRequest(
+            stop(meetingPlace.placeId, 1, "FIRST_MEETING", now),
+            stop(cafePlace.placeId, 2, "CAFE", now.plus(1, ChronoUnit.HOURS)),
+        )).andExpect { status { isOk() } }
+
+        // 저장 이후에 카페만 삭제한다. 초안은 usage checker의 보호를 받지 않으므로 삭제가 허용된다.
+        mockMvc.delete("/api/v1/boards/${host.boardId}/places/${cafePlace.placeId}") { bearer(host.token) }
+            .andExpect { status { isNoContent() } }
+
+        val body = mockMvc.get("/api/v1/boards/${host.boardId}/course-draft") { bearer(host.token) }
+            .andExpect { status { isOk() } }.andReturn().response.contentAsString
+        val json = objectMapper.readTree(body)
+        val stops = json.path("stops")
+
+        assertEquals(2, stops.size(), "삭제된 장소를 참조한 스톱도 숨기지 않고 그대로 노출해야 함")
+        assertFalse(stops[0].path("placeDeleted").asBoolean(), "삭제되지 않은 첫 스톱은 placeDeleted=false")
+        assertTrue(stops[1].path("placeDeleted").asBoolean(), "삭제된 장소를 참조한 스톱은 placeDeleted=true")
+        assertEquals(1, json.path("legs").size(), "삭제된 스톱이 있어도 legs는 전체 스톱 기준으로 계산되어야 함")
+    }
+
+    @Test
     fun `V4-4f 장소가 11개면 400을 반환한다`() {
         val host = createBoard("11개 장소 보드", "호스트")
         val now = Instant.now().plus(1, ChronoUnit.HOURS)

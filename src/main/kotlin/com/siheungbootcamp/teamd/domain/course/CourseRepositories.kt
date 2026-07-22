@@ -25,7 +25,11 @@ interface CourseRepository : JpaRepository<Course, Long> {
 
 @Repository
 interface CourseStopRepository : JpaRepository<CourseStop, Long> {
-    fun findByCourseIdOrderByOrderIndex(courseId: Long): List<CourseStop>
+    /** place는 LAZY 연관이라, fetch join 없이는 응답 조립 시(toCourseResponse/publicSchedule)
+     * 스톱마다 추가 SELECT가 발생한다(N+1). 최대 10개라 치명적이진 않지만 공개 일정은 인증
+     * 없이 반복 호출될 수 있는 경로라 여기서 함께 로딩한다. */
+    @Query("select cs from CourseStop cs join fetch cs.place where cs.course.id = :courseId order by cs.orderIndex")
+    fun findByCourseIdOrderByOrderIndex(@Param("courseId") courseId: Long): List<CourseStop>
 
     /** 장소 삭제 가능 여부 판단(T4-3)과 공개 일정의 `updatedAt` 계산에 쓰인다.
      * 오래된 확정 버전도 조회 가능해야 하므로 모든 버전을 대상으로 한다. */

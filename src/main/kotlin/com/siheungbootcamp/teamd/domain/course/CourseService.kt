@@ -10,6 +10,7 @@ import com.siheungbootcamp.teamd.global.auth.AuthorizationChecks
 import com.siheungbootcamp.teamd.global.auth.ParticipantPrincipal
 import com.siheungbootcamp.teamd.global.error.BusinessException
 import com.siheungbootcamp.teamd.global.error.ErrorCode
+import org.slf4j.LoggerFactory
 import org.springframework.dao.DataIntegrityViolationException
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
@@ -38,6 +39,8 @@ class CourseService(
     private val publicTokenGenerator: PublicTokenGenerator,
     private val objectMapper: ObjectMapper,
 ) {
+    private val logger = LoggerFactory.getLogger(javaClass)
+
     fun getDraft(boardId: String, principal: ParticipantPrincipal): CourseDraftResponse {
         checks.requireBoard(principal, boardId)
         val board = findBoard(boardId)
@@ -79,7 +82,8 @@ class CourseService(
             } catch (e: DataIntegrityViolationException) {
                 // 초안이 아직 없을 때는 잠글 행이 없어 두 요청이 동시에 첫 insert를 시도할 수 있다.
                 // course_draft.board_id unique 제약(V1__baseline.sql)에 걸린 쪽은 이미 다른 요청이
-                // draft-1을 만들었다는 뜻이므로 412로 변환한다.
+                // draft-1을 만들었다는 뜻이므로 412로 변환한다. 원본 예외는 진단용으로 로그만 남긴다.
+                logger.debug("동시 초안 첫 insert 경합 감지: boardId={}", boardIdInternal, e)
                 val current = drafts.findByBoardId(boardIdInternal)
                 val latestTag = etag(current?.version ?: 0)
                 throw BusinessException(ErrorCode.VERSION_MISMATCH, mapOf("currentETag" to latestTag))
@@ -197,12 +201,17 @@ class CourseService(
     private fun buildDraftResponse(boardIdInternal: Long, version: Int, entries: List<DraftStopEntry>): CourseDraftResponse {
         if (entries.isEmpty()) return CourseDraftResponse(version, emptyList(), emptyList())
         val ordered = entries.sortedBy { it.orderIndex }
+        // 삭제 필터 없이 조회한다: 초안은 확정 전까지 usage checker의 보호를 받지 않으므로
+        // 저장된 뒤 장소가 삭제될 수 있다. 그 스톱을 숨기지 않고 placeDeleted로만 표시한다.
         val placeById = ordered.associate { entry ->
             entry.placeId to (places.findByPublicIdAndBoardId(entry.placeId, boardIdInternal) ?: throw BusinessException(ErrorCode.INTERNAL_ERROR))
         }
         return CourseDraftResponse(
             version = version,
-            stops = ordered.map { DraftStopResponse(it.placeId, it.orderIndex, it.role, Instant.parse(it.scheduledAt)) },
+            stops = ordered.map { entry ->
+                val place = placeById.getValue(entry.placeId)
+                DraftStopResponse(entry.placeId, entry.orderIndex, entry.role, Instant.parse(entry.scheduledAt), placeDeleted = place.deletedAt != null)
+            },
             legs = LegEstimator.estimate(ordered.map { entry -> val p = placeById.getValue(entry.placeId); LegEstimator.StopPoint(entry.orderIndex, p.lon, p.lat) }),
         )
     }

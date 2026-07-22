@@ -1,5 +1,7 @@
 package com.siheungbootcamp.teamd.domain.course
 
+import com.siheungbootcamp.teamd.global.ratelimit.RateLimit
+import com.siheungbootcamp.teamd.global.ratelimit.RateLimitKey
 import io.swagger.v3.oas.annotations.Operation
 import io.swagger.v3.oas.annotations.responses.ApiResponse
 import io.swagger.v3.oas.annotations.tags.Tag
@@ -25,6 +27,7 @@ class PublicScheduleController(private val service: CourseService) {
     @Operation(summary = "공개 일정 조회", description = "인증 없이 현재 확정 코스만 반환합니다. 참여자·출발지·토큰·댓글·투표·boardId는 포함하지 않습니다.")
     @ApiResponse(responseCode = "200", description = "조회 성공")
     @ApiResponse(responseCode = "404", description = "토큰이 없거나 보드가 CLOSED (구분 없이 동일하게 반환)")
+    @RateLimit(permits = 30, windowSeconds = 60, key = RateLimitKey.IP)
     fun get(@PathVariable publicToken: String): ResponseEntity<PublicScheduleResponse> =
         ResponseEntity.ok().header(HttpHeaders.CACHE_CONTROL, "no-cache").body(service.publicSchedule(publicToken))
 }

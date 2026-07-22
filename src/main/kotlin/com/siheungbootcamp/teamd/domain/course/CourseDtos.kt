@@ -35,6 +35,9 @@ data class DraftStopResponse(
     val orderIndex: Int,
     val role: String,
     val scheduledAt: Instant,
+    // 초안은 확정과 달리 삭제된 장소를 참조한 채로 남을 수 있다(확정 전까지는 usage checker가
+    // 막지 않음). 스톱을 숨기거나 legs 계산에서 빼지 않고, FE가 표시만 구분할 수 있게 플래그만 얹는다.
+    val placeDeleted: Boolean = false,
 )
 
 data class CourseLegResponse(
