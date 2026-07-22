@@ -1,0 +1,17 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    ports: ["5432:5432"]
+    env_file: [.env]
+    environment:
+      POSTGRES_DB: teamd
+      POSTGRES_USER: teamd
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U teamd -d teamd"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    volumes: ["teamd-postgres:/var/lib/postgresql/data"]
+volumes:
+  teamd-postgres:

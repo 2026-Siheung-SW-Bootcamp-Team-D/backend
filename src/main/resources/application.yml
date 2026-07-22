@@ -3,6 +3,14 @@ server:
 spring:
   application:
     name: teamd
+  jackson:
+    time-zone: UTC
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+  flyway:
+    enabled: true
 management:
   endpoints:
     web:
@@ -11,3 +19,15 @@ management:
   endpoint:
     health:
       show-details: never
+      show-components: always
+  health:
+    db:
+      enabled: true
+app:
+  cors:
+    allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:5173}
+    allowed-origin-patterns: ${CORS_ALLOWED_ORIGIN_PATTERNS:}
+  auth:
+    token-pepper: ${TOKEN_PEPPER}
+  crypto:
+    origin-key: ${ORIGIN_ENC_KEY}
