@@ -1,0 +1,119 @@
+name: CD
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: production-deploy
+  cancel-in-progress: false
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
+      REGION: ${{ vars.GCP_REGION }}
+      REPOSITORY: ${{ vars.GCP_ARTIFACT_REPOSITORY }}
+      VM_NAME: ${{ vars.GCP_VM_NAME }}
+      VM_ZONE: ${{ vars.GCP_VM_ZONE }}
+      CLOUD_SQL_INSTANCE: ${{ vars.GCP_CLOUD_SQL_INSTANCE }}
+      API_BASE_URL: ${{ vars.API_BASE_URL }}
+    steps:
+      - name: 소스 체크아웃
+        uses: actions/checkout@v4
+
+      - name: JDK 21 설정
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Gradle 설정
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: 빌드 및 테스트
+        run: ./gradlew build
+
+      - name: CI/CD 스크립트 테스트
+        run: bash scripts/tests/deploy-test.sh
+
+      - name: WIF 인증
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_DEPLOY_SERVICE_ACCOUNT }}
+
+      - name: gcloud 설정
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: 배포 전 Cloud SQL 백업 확인
+        shell: bash
+        run: |
+          set -euo pipefail
+          latest_backup="$(gcloud sql backups list \
+            --project "${PROJECT_ID}" \
+            --instance "${CLOUD_SQL_INSTANCE}" \
+            --filter='status=SUCCESSFUL' \
+            --sort-by='~endTime' \
+            --limit=1 \
+            --format='value(id)')"
+          test -n "${latest_backup}" || { echo '성공한 Cloud SQL 백업이 없어 배포를 중단합니다.' >&2; exit 1; }
+          echo "Cloud SQL 백업 확인 완료: ${latest_backup}"
+
+      - name: Artifact Registry 인증
+        run: gcloud auth configure-docker "${REGION}-docker.pkg.dev" --quiet
+
+      - name: commit SHA 이미지 빌드 및 push
+        shell: bash
+        run: |
+          set -euo pipefail
+          image="${REGION}-docker.pkg.dev/${PROJECT_ID}/${REPOSITORY}/teamd"
+          docker build --tag "${image}:${{ github.sha }}" --tag "${image}:latest" .
+          docker push "${image}:${{ github.sha }}"
+          docker push "${image}:latest"
+
+      - name: 배포 스크립트 전송
+        shell: bash
+        run: |
+          set -euo pipefail
+          gcloud compute scp \
+            --project "${PROJECT_ID}" \
+            --zone "${VM_ZONE}" \
+            --tunnel-through-iap \
+            --quiet \
+            scripts/deploy.sh scripts/smoke-test.sh \
+            "${VM_NAME}:/tmp/"
+          gcloud compute ssh "${VM_NAME}" \
+            --project "${PROJECT_ID}" \
+            --zone "${VM_ZONE}" \
+            --tunnel-through-iap \
+            --quiet \
+            --command 'sudo install -o root -g root -m 0755 /tmp/deploy.sh /opt/teamd/deploy.sh && sudo install -o root -g root -m 0755 /tmp/smoke-test.sh /opt/teamd/smoke-test.sh'
+
+      - name: VM 배포·health·smoke
+        shell: bash
+        run: |
+          set -euo pipefail
+          gcloud compute ssh "${VM_NAME}" \
+            --project "${PROJECT_ID}" \
+            --zone "${VM_ZONE}" \
+            --tunnel-through-iap \
+            --quiet \
+            --command "sudo /opt/teamd/deploy.sh '${{ github.sha }}' '${API_BASE_URL}'"
+
+      - name: 테스트 리포트 업로드
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: deploy-test-reports-${{ github.run_id }}
+          path: |
+            build/reports/tests/
+            build/test-results/
+          if-no-files-found: warn
+          retention-days: 7

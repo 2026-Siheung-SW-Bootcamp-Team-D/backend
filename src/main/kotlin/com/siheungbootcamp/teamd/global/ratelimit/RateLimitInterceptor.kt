@@ -20,7 +20,11 @@ class RateLimitInterceptor(private val clock: Clock = Clock.systemUTC()) : Handl
     override fun preHandle(request: HttpServletRequest, response: HttpServletResponse, handler: Any): Boolean {
         val method = handler as? HandlerMethod ?: return true
         val limit = method.getMethodAnnotation(RateLimit::class.java) ?: return true
-        val key = "${method.method.toGenericString()}:${resolveKey(limit.key, request)}"
+        val bucketScope = when (limit.scope) {
+            RateLimitScope.ENDPOINT -> method.method.toGenericString()
+            RateLimitScope.PARTICIPANT_GLOBAL -> "participant-global"
+        }
+        val key = "$bucketScope:${resolveKey(limit.key, request)}"
         val now = clock.instant().epochSecond
         val bucket = buckets.compute(key) { _, current ->
             val previous = current ?: Bucket(limit.permits.toDouble(), now)

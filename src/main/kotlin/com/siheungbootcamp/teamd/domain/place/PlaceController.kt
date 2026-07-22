@@ -1,0 +1,165 @@
+package com.siheungbootcamp.teamd.domain.place
+
+import com.siheungbootcamp.teamd.domain.board.RequiresBoardOpen
+import com.siheungbootcamp.teamd.global.auth.CurrentParticipant
+import com.siheungbootcamp.teamd.global.auth.ParticipantPrincipal
+import com.siheungbootcamp.teamd.global.error.BusinessException
+import com.siheungbootcamp.teamd.global.error.ErrorCode
+import com.siheungbootcamp.teamd.global.ratelimit.RateLimit
+import com.siheungbootcamp.teamd.global.ratelimit.RateLimitKey
+import com.siheungbootcamp.teamd.global.ratelimit.RateLimitScope
+import io.swagger.v3.oas.annotations.Operation
+import io.swagger.v3.oas.annotations.Parameter
+import io.swagger.v3.oas.annotations.responses.ApiResponse
+import io.swagger.v3.oas.annotations.security.SecurityRequirement
+import io.swagger.v3.oas.annotations.tags.Tag
+import jakarta.validation.Valid
+import org.springframework.data.domain.Pageable
+import org.springframework.data.domain.PageRequest
+import org.springframework.http.HttpStatus
+import org.springframework.http.ResponseEntity
+import org.springframework.web.bind.annotation.*
+import java.net.URI
+
+/** P2 HTTP 요청을 검증하고 애플리케이션 서비스 결과를 API 명세 형태로 반환한다. */
+@RestController
+@RequestMapping("/api/v1")
+@Tag(name = "P2 장소·검색", description = "장소를 검색하고 등록·조회·삭제합니다.")
+class PlaceController(private val service: PlaceService) {
+
+    // 검색 엔드포인트 (9-11)
+
+    @GetMapping("/boards/{boardId}/place-candidates")
+    @Operation(summary = "장소 후보 검색", description = "Kakao Local 키워드 검색으로 최대 5개 후보를 반환합니다.")
+    @SecurityRequirement(name = "participantToken")
+    @ApiResponse(responseCode = "200", description = "검색 성공, 결과 없을 수 있음")
+    @ApiResponse(responseCode = "400", description = "쿼리 길이·형식 오류")
+    @ApiResponse(responseCode = "404", description = "다른 보드의 토큰(존재 숨김)")
+    @RateLimit(permits = 20, windowSeconds = 60, key = RateLimitKey.PARTICIPANT, scope = RateLimitScope.PARTICIPANT_GLOBAL)
+    fun searchPlaceCandidates(
+        @PathVariable boardId: String,
+        @RequestParam(required = true) query: String,
+        @RequestParam(required = false) lon: Double?,
+        @RequestParam(required = false) lat: Double?,
+        @RequestParam(required = false) radius: Int?,
+        @Parameter(hidden = true) @CurrentParticipant principal: ParticipantPrincipal,
+    ) = service.searchKeyword(boardId, principal, query, lon, lat, radius)
+
+    @GetMapping("/boards/{boardId}/address-candidates")
+    @Operation(summary = "주소 후보 검색", description = "도로명 또는 지번 주소를 검색합니다.")
+    @SecurityRequirement(name = "participantToken")
+    @ApiResponse(responseCode = "200", description = "검색 성공, 결과 없을 수 있음")
+    @ApiResponse(responseCode = "404", description = "다른 보드의 토큰(존재 숨김)")
+    @RateLimit(permits = 20, windowSeconds = 60, key = RateLimitKey.PARTICIPANT, scope = RateLimitScope.PARTICIPANT_GLOBAL)
+    fun searchAddressCandidates(
+        @PathVariable boardId: String,
+        @RequestParam(required = true) query: String,
+        @Parameter(hidden = true) @CurrentParticipant principal: ParticipantPrincipal,
+    ) = service.searchAddress(boardId, principal, query)
+
+    @GetMapping("/boards/{boardId}/coordinate-address")
+    @Operation(summary = "좌표로 주소 조회", description = "경위도로부터 도로명·지번 주소를 조회합니다.")
+    @SecurityRequirement(name = "participantToken")
+    @ApiResponse(responseCode = "200", description = "조회 성공, 주소 없을 수 있음")
+    @ApiResponse(responseCode = "404", description = "다른 보드의 토큰(존재 숨김)")
+    @RateLimit(permits = 20, windowSeconds = 60, key = RateLimitKey.PARTICIPANT, scope = RateLimitScope.PARTICIPANT_GLOBAL)
+    fun getCoordinateAddress(
+        @PathVariable boardId: String,
+        @RequestParam(required = true) lon: Double,
+        @RequestParam(required = true) lat: Double,
+        @Parameter(hidden = true) @CurrentParticipant principal: ParticipantPrincipal,
+    ) = service.coord2Address(boardId, principal, lon, lat)
+
+    // 장소 관리 엔드포인트 (12-15)
+
+    @PostMapping("/boards/{boardId}/places")
+    @Operation(summary = "장소 등록", description = "검색 결과 또는 지도 핀으로부터 장소를 등록합니다.")
+    @SecurityRequirement(name = "participantToken")
+    @ApiResponse(responseCode = "201", description = "등록 성공")
+    @ApiResponse(responseCode = "400", description = "필드 검증 오류")
+    @ApiResponse(responseCode = "404", description = "다른 보드의 토큰(존재 숨김)")
+    @ApiResponse(responseCode = "409", description = "보드가 종료됨")
+    @RequiresBoardOpen
+    @RateLimit(permits = 20, windowSeconds = 60, key = RateLimitKey.PARTICIPANT, scope = RateLimitScope.PARTICIPANT_GLOBAL)
+    fun createPlace(
+        @PathVariable boardId: String,
+        @Parameter(hidden = true) @CurrentParticipant principal: ParticipantPrincipal,
+        @Valid @RequestBody request: CreatePlaceRequest,
+    ): ResponseEntity<PlaceResponse> {
+        val response = service.create(boardId, principal, request)
+        return ResponseEntity.created(URI.create("/api/v1/boards/$boardId/places/${response.placeId}"))
+            .body(response)
+    }
+
+    @GetMapping("/boards/{boardId}/places")
+    @Operation(summary = "장소 목록 조회", description = "카테고리·정렬·바운딩박스로 필터링하여 조회합니다.")
+    @SecurityRequirement(name = "participantToken")
+    @ApiResponse(responseCode = "200", description = "조회 성공")
+    @ApiResponse(responseCode = "404", description = "다른 보드의 토큰(존재 숨김)")
+    @RateLimit(permits = 60, windowSeconds = 60, key = RateLimitKey.PARTICIPANT, scope = RateLimitScope.PARTICIPANT_GLOBAL)
+    fun listPlaces(
+        @PathVariable boardId: String,
+        @RequestParam(required = false) category: String?,
+        @RequestParam(required = false, defaultValue = "RECENT") sort: String,
+        @RequestParam(required = false) bbox: String?,
+        @RequestParam(defaultValue = "1") page: Int,
+        @RequestParam(defaultValue = "20") size: Int,
+        @Parameter(hidden = true) @CurrentParticipant principal: ParticipantPrincipal,
+    ): PlaceListResponse {
+        val pageable = PageRequest.of(maxOf(0, page - 1), size.coerceIn(1, 50))
+        val box = parseBbox(bbox)
+        val response = service.list(boardId, principal, category, sort, box?.minLon, box?.minLat, box?.maxLon, box?.maxLat, pageable)
+        return PlaceListResponse(
+            items = response.items,
+            page = PlaceListResponse.PageMetadata(
+                number = response.page.number,
+                size = response.page.size,
+                totalItems = response.page.totalItems,
+                totalPages = response.page.totalPages,
+            ),
+        )
+    }
+
+    @GetMapping("/boards/{boardId}/places/{placeId}")
+    @Operation(summary = "장소 상세 조회", description = "특정 장소의 정보를 조회합니다.")
+    @SecurityRequirement(name = "participantToken")
+    @ApiResponse(responseCode = "200", description = "조회 성공")
+    @ApiResponse(responseCode = "404", description = "다른 보드의 토큰(존재 숨김)")
+    @ApiResponse(responseCode = "404", description = "장소가 없음")
+    @RateLimit(permits = 60, windowSeconds = 60, key = RateLimitKey.PARTICIPANT, scope = RateLimitScope.PARTICIPANT_GLOBAL)
+    fun getPlace(
+        @PathVariable boardId: String,
+        @PathVariable placeId: String,
+        @Parameter(hidden = true) @CurrentParticipant principal: ParticipantPrincipal,
+    ) = service.get(boardId, placeId, principal)
+
+    @DeleteMapping("/boards/{boardId}/places/{placeId}")
+    @Operation(summary = "장소 삭제", description = "제안자 또는 호스트만 삭제할 수 있습니다. 이미 삭제된 장소를 재삭제해도 204를 반환합니다.")
+    @SecurityRequirement(name = "participantToken")
+    @ApiResponse(responseCode = "204", description = "삭제 성공 또는 이미 삭제됨")
+    @ApiResponse(responseCode = "403", description = "제안자·호스트가 아님")
+    @ApiResponse(responseCode = "404", description = "장소 또는 다른 보드의 토큰(존재 숨김)")
+    @ApiResponse(responseCode = "409", description = "투표·코스에서 사용 중")
+    @RequiresBoardOpen
+    @RateLimit(permits = 20, windowSeconds = 60, key = RateLimitKey.PARTICIPANT, scope = RateLimitScope.PARTICIPANT_GLOBAL)
+    fun deletePlace(
+        @PathVariable boardId: String,
+        @PathVariable placeId: String,
+        @Parameter(hidden = true) @CurrentParticipant principal: ParticipantPrincipal,
+    ): ResponseEntity<Void> {
+        service.delete(boardId, placeId, principal)
+        return ResponseEntity.noContent().build()
+    }
+
+    /** 명세 7.2: `bbox=minLon,minLat,maxLon,maxLat` 단일 쿼리 파라미터. 형식이 어긋나면 400. */
+    private fun parseBbox(raw: String?): BoundingBox? {
+        if (raw == null) return null
+        val parts = raw.split(",").map { it.trim().toDoubleOrNull() ?: throw BusinessException(ErrorCode.INVALID_ARGUMENT) }
+        if (parts.size != 4) throw BusinessException(ErrorCode.INVALID_ARGUMENT)
+        val box = BoundingBox(minLon = parts[0], minLat = parts[1], maxLon = parts[2], maxLat = parts[3])
+        if (box.minLon > box.maxLon || box.minLat > box.maxLat) throw BusinessException(ErrorCode.INVALID_ARGUMENT)
+        return box
+    }
+
+    private data class BoundingBox(val minLon: Double, val minLat: Double, val maxLon: Double, val maxLat: Double)
+}

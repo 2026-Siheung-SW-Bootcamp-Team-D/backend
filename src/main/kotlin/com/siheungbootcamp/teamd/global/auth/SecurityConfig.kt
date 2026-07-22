@@ -36,6 +36,7 @@ class SecurityConfig {
         .exceptionHandling { it.authenticationEntryPoint(authenticationEntryPoint) }
         .authorizeHttpRequests {
             it.requestMatchers("/actuator/health").permitAll()
+            it.requestMatchers("/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html").permitAll()
             it.requestMatchers(HttpMethod.POST, "/api/v1/boards").permitAll()
             it.requestMatchers(HttpMethod.GET, "/api/v1/invitations/*").permitAll()
             it.requestMatchers(HttpMethod.POST, "/api/v1/invitations/*/participants").permitAll()
