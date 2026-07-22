@@ -58,7 +58,8 @@ class ExternalApiClient(
                     val retryAfterSeconds = entity.headers.getFirst("Retry-After")?.toLongOrNull()
                     logger.warn("external_api_call provider=$provider attempt=${attempt + 1} status=429 retries_remaining=${2 - attempt}")
                     if (attempt < 2) {
-                        val waitMs = retryAfterSeconds?.let { it * 1000 } ?: ((1L shl attempt) * 1000) // 1s, 2s, 4s
+                        // 외부가 비정상적으로 큰 Retry-After를 주더라도 요청 스레드가 무한정 묶이지 않도록 상한을 둔다.
+                        val waitMs = retryAfterSeconds?.let { (it * 1000).coerceAtMost(MAX_BACKOFF_MS) } ?: ((1L shl attempt) * 1000) // 1s, 2s, 4s
                         Thread.sleep(waitMs)
                         return@repeat
                     }
@@ -85,6 +86,10 @@ class ExternalApiClient(
         logger.warn("external_api_call provider=$provider error=unavailable retry_count=3")
         throw BusinessException(ErrorCode.EXTERNAL_UNAVAILABLE)
     }
+
+    companion object {
+        private const val MAX_BACKOFF_MS = 10_000L
+    }
 }
 
 /**
@@ -95,29 +100,35 @@ class ExternalApiClient(
  */
 class DailyQuotaManager(private val quotas: Map<String, Int> = mapOf("KAKAO" to 10000)) {
     private val logger = LoggerFactory.getLogger(javaClass)
-    private val counters = mutableMapOf<String, QuotaCounter>()
+    private val counters = java.util.concurrent.ConcurrentHashMap<String, QuotaCounter>()
 
-    data class QuotaCounter(var count: Int = 0, var lastResetAt: Instant = Instant.now())
+    /** count는 원자적으로 증가·리셋해야 동시 요청 사이에서 예산 집계가 어긋나지 않는다. */
+    class QuotaCounter {
+        val count = java.util.concurrent.atomic.AtomicInteger(0)
+        @Volatile var lastResetAt: Instant = Instant.now()
+    }
 
     fun checkQuota(provider: String) {
         val quota = quotas[provider] ?: return
-        val counter = counters.getOrPut(provider) { QuotaCounter() }
+        val counter = counters.computeIfAbsent(provider) { QuotaCounter() }
 
         val now = Instant.now()
-        if (isMidnightPassed(counter.lastResetAt, now)) {
-            counter.count = 0
-            counter.lastResetAt = now
+        synchronized(counter) {
+            if (isMidnightPassed(counter.lastResetAt, now)) {
+                counter.count.set(0)
+                counter.lastResetAt = now
+            }
         }
 
-        if (counter.count >= quota) {
-            logger.warn("daily_quota_exceeded provider=$provider count=${counter.count} limit=$quota")
+        if (counter.count.get() >= quota) {
+            logger.warn("daily_quota_exceeded provider=$provider count=${counter.count.get()} limit=$quota")
             throw BusinessException(ErrorCode.QUOTA_EXCEEDED)
         }
     }
 
     fun incrementCount(provider: String) {
-        val counter = counters.getOrPut(provider) { QuotaCounter() }
-        counter.count++
+        val counter = counters.computeIfAbsent(provider) { QuotaCounter() }
+        counter.count.incrementAndGet()
     }
 
     private fun isMidnightPassed(lastReset: Instant, now: Instant): Boolean {
