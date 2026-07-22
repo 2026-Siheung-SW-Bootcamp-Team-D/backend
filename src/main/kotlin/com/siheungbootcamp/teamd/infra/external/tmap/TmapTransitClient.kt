@@ -4,6 +4,7 @@ import com.siheungbootcamp.teamd.global.error.BusinessException
 import com.siheungbootcamp.teamd.global.error.ErrorCode
 import com.siheungbootcamp.teamd.global.external.ExternalApiClient
 import org.slf4j.LoggerFactory
+import org.springframework.beans.factory.annotation.Qualifier
 import org.springframework.stereotype.Component
 import tools.jackson.databind.ObjectMapper
 import java.time.Instant
@@ -21,7 +22,7 @@ import java.time.format.DateTimeFormatter
 @Component
 class TmapTransitClient(
     private val properties: TmapTransitProperties,
-    private val externalApiClient: ExternalApiClient,
+    @Qualifier("tmapExternalApiClient") private val externalApiClient: ExternalApiClient,
     private val mapper: ObjectMapper,
 ) {
     private val logger = LoggerFactory.getLogger(javaClass)

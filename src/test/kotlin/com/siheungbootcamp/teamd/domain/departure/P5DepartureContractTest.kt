@@ -15,7 +15,9 @@ import org.springframework.test.context.DynamicPropertyRegistry
 import org.springframework.test.context.DynamicPropertySource
 import org.springframework.test.web.servlet.MockMvc
 import org.springframework.test.web.servlet.get
+import org.springframework.test.web.servlet.patch
 import org.springframework.test.web.servlet.post
+import org.springframework.test.web.servlet.put
 import org.testcontainers.junit.jupiter.Container
 import org.testcontainers.junit.jupiter.Testcontainers
 import org.testcontainers.postgresql.PostgreSQLContainer
@@ -42,6 +44,10 @@ class P5DepartureContractTest(
     @Autowired private val jdbcClient: JdbcClient,
     @Autowired private val departureJobExecutor: DepartureJobExecutor,
 ) {
+    private fun org.springframework.test.web.servlet.MockHttpServletRequestDsl.bearer(token: String) {
+        header("Authorization", "Bearer $token")
+    }
+
     companion object {
         @Container @ServiceConnection @JvmStatic
         val postgres = PostgreSQLContainer("postgres:16-alpine")
@@ -302,58 +308,55 @@ class P5DepartureContractTest(
     private fun createBoard(n: String, nick: String): CB {
         val r = mockMvc.post("/api/v1/boards") {
             contentType = MediaType.APPLICATION_JSON
-            content = """{"name":"$n","nickname":"$nick"}"""
-        }.andReturn().response
+            content = """{"name":"$n","dateRange":{"start":"2099-01-01","end":"2099-01-02"},"purpose":"test","hostNickname":"$nick"}"""
+        }.andExpect { status { isCreated() } }.andReturn().response
         val j = objectMapper.readTree(r.contentAsString)
-        return CB(j.path("boardId").asText(), j.path("participantToken").asText())
+        return CB(
+            j.path("board").path("boardId").asText(),
+            j.path("participant").path("participantToken").asText(),
+            j.path("invitation").path("inviteCode").asText()
+        )
     }
 
     private fun inviteAndJoin(host: CB, nick: String): CB {
-        val ir = mockMvc.post("/api/v1/boards/${host.b}/invitations") {
-            bearer(host.t)
-            contentType = MediaType.APPLICATION_JSON; content = "{}"
-        }.andReturn().response
-        val ic = objectMapper.readTree(ir.contentAsString).path("invitationCode").asText()
-        val jr = mockMvc.post("/api/v1/invitations/$ic/accept") {
+        val jr = mockMvc.post("/api/v1/invitations/${host.inviteCode}/participants") {
             contentType = MediaType.APPLICATION_JSON
             content = """{"nickname":"$nick"}"""
-        }.andReturn().response
+        }.andExpect { status { isCreated() } }.andReturn().response
         val j = objectMapper.readTree(jr.contentAsString)
-        return CB(host.b, j.path("participantToken").asText())
+        return CB(host.boardId, j.path("participantToken").asText(), host.inviteCode)
     }
 
     private fun setOrigin(host: CB, label: String, lon: Double, lat: Double) {
-        mockMvc.post("/api/v1/boards/${host.b}/participants/me/origin") {
-            bearer(host.t)
+        mockMvc.patch("/api/v1/boards/${host.boardId}/participants/me") {
+            bearer(host.token)
             contentType = MediaType.APPLICATION_JSON
-            content = """{"label":"$label","lon":$lon,"lat":$lat,"source":"MANUAL_PIN"}"""
-        }.andExpect { status { isCreated() } }
+            content = """{"origin":{"label":"$label","lon":$lon,"lat":$lat,"source":"MANUAL_PIN"}}"""
+        }.andExpect { status { isOk() } }
     }
 
     private fun createPlace(host: CB, n: String, lon: Double, lat: Double): String {
-        val r = mockMvc.post("/api/v1/boards/${host.b}/places") {
-            bearer(host.t)
+        val r = mockMvc.post("/api/v1/boards/${host.boardId}/places") {
+            bearer(host.token)
             contentType = MediaType.APPLICATION_JSON
-            content = """{"name":"$n","addressName":"서울","roadAddressName":"서울","lon":$lon,"lat":$lat,"providerPlaceId":"123","providerPlaceUrl":null,"category":"음식점"}"""
-        }.andReturn().response
+            content = """{"name":"$n","addressName":"서울","roadAddressName":"서울","lon":$lon,"lat":$lat,"internalCategory":"RESTAURANT","provider":"KAKAO","providerPlaceId":"123","providerPlaceUrl":null,"source":"MANUAL_PIN"}"""
+        }.andExpect { status { isCreated() } }.andReturn().response
         return objectMapper.readTree(r.contentAsString).path("placeId").asText()
     }
 
     private fun confirmCourse(host: CB, placeId: String) {
-        mockMvc.put("/api/v1/boards/${host.b}/course-draft") {
-            bearer(host.t)
+        mockMvc.put("/api/v1/boards/${host.boardId}/course-draft") {
+            bearer(host.token)
             header("If-Match", "\"draft-0\"")
             contentType = MediaType.APPLICATION_JSON
             content = """{"stops":[{"placeId":"$placeId","orderIndex":1,"role":"FIRST_MEETING","scheduledAt":"2026-07-26T18:00:00Z"}]}"""
         }.andExpect { status { isOk() } }
 
-        mockMvc.post("/api/v1/boards/${host.b}/courses") {
-            bearer(host.t)
+        mockMvc.post("/api/v1/boards/${host.boardId}/courses") {
+            bearer(host.token)
             contentType = MediaType.APPLICATION_JSON; content = """{"draftVersion":1}"""
         }.andExpect { status { isCreated() } }
     }
 
-    private fun bearer(t: String): MockMvc.() -> Unit = { header("Authorization", "Bearer $t") }
-
-    data class CB(val b: String, val t: String)
+    data class CB(val boardId: String, val token: String, val inviteCode: String)
 }
