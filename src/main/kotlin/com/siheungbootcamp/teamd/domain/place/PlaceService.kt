@@ -210,7 +210,7 @@ class PlaceService(
         for (checker in usageCheckers) {
             val usage = checker.findUsage(place.id!!)
             if (usage != null) {
-                throw BusinessException(ErrorCode.PLACE_IN_USE)
+                throw BusinessException(ErrorCode.PLACE_IN_USE, usage.details)
             }
         }
 

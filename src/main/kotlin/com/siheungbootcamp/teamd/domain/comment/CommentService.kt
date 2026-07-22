@@ -111,7 +111,8 @@ class CommentService(
         val place = places.findByPublicIdAndBoardIdAndDeletedAtIsNull(placeId, boardId_internal)
             ?: throw BusinessException(ErrorCode.RESOURCE_NOT_FOUND)
 
-        val comment = comments.findByPublicIdAndDeletedAtIsNull(commentId)
+        // Find comment regardless of deletion status for idempotent delete
+        val comment = comments.findByPublicId(commentId)
             ?: throw BusinessException(ErrorCode.RESOURCE_NOT_FOUND)
 
         // 댓글이 이 장소에 속하는지 확인

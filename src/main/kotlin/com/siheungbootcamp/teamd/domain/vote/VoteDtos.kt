@@ -1,5 +1,7 @@
 package com.siheungbootcamp.teamd.domain.vote
 
+import jakarta.validation.constraints.Max
+import jakarta.validation.constraints.Min
 import jakarta.validation.constraints.Size
 import java.time.Instant
 
@@ -7,7 +9,7 @@ import java.time.Instant
 
 data class CreateVoteRequest(
     @field:Size(min = 2, max = 10) val placeIds: List<String>,
-    @field:Size(min = 1, max = 10) val maxSelections: Int,
+    @field:Min(1) @field:Max(10) val maxSelections: Int,
     val anonymous: Boolean,
     val closesAt: Instant,
 )

@@ -8,6 +8,8 @@ import org.springframework.stereotype.Repository
 
 @Repository
 interface CommentRepository : JpaRepository<PlaceComment, Long> {
+    fun findByPublicId(publicId: String): PlaceComment?
+
     fun findByPublicIdAndDeletedAtIsNull(publicId: String): PlaceComment?
 
     @Query("""
