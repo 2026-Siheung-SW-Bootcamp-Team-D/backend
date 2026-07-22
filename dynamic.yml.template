@@ -1,0 +1,14 @@
+http:
+  routers:
+    teamd:
+      rule: "Host(`${API_DOMAIN}`)"
+      entryPoints:
+        - websecure
+      service: teamd
+      tls:
+        certResolver: le
+  services:
+    teamd:
+      loadBalancer:
+        servers:
+          - url: "http://app:8080"
