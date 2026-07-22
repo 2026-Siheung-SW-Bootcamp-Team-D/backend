@@ -64,6 +64,7 @@ class CicdConfigurationTest {
         assertContains(workflow, "API_DOMAIN: ${'$'}{{ vars.API_DOMAIN }}")
         assertContains(workflow, "FRONTEND_BASE_URL: ${'$'}{{ vars.FRONTEND_BASE_URL }}")
         assertContains(workflow, "CORS_ALLOWED_ORIGINS: ${'$'}{{ vars.CORS_ALLOWED_ORIGINS }}")
+        assertContains(workflow, "scripts/deploy.sh scripts/smoke-test.sh dynamic.yml.template")
         assertContains(deploy, "API_DOMAIN")
         assertContains(deploy, "dynamic.yml.template")
         assertContains(envExample, "API_DOMAIN=api.yeondang.com")

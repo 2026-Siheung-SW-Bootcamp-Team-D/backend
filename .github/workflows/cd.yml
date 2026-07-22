@@ -89,14 +89,14 @@ jobs:
             --zone "${VM_ZONE}" \
             --tunnel-through-iap \
             --quiet \
-            scripts/deploy.sh scripts/smoke-test.sh \
+            scripts/deploy.sh scripts/smoke-test.sh dynamic.yml.template \
             "${VM_NAME}:/tmp/"
           gcloud compute ssh "${VM_NAME}" \
             --project "${PROJECT_ID}" \
             --zone "${VM_ZONE}" \
             --tunnel-through-iap \
             --quiet \
-            --command 'sudo install -o root -g root -m 0755 /tmp/deploy.sh /opt/teamd/deploy.sh && sudo install -o root -g root -m 0755 /tmp/smoke-test.sh /opt/teamd/smoke-test.sh'
+            --command 'sudo install -o root -g root -m 0755 /tmp/deploy.sh /opt/teamd/deploy.sh && sudo install -o root -g root -m 0755 /tmp/smoke-test.sh /opt/teamd/smoke-test.sh && sudo install -o root -g root -m 0644 /tmp/dynamic.yml.template /opt/teamd/dynamic.yml.template'
 
       - name: VM 배포·health·smoke
         shell: bash
