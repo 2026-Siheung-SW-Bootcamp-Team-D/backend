@@ -1,4 +1,4 @@
-name: main 배포
+name: CD
 
 on:
   push:
@@ -86,12 +86,14 @@ jobs:
             --project "${PROJECT_ID}" \
             --zone "${VM_ZONE}" \
             --tunnel-through-iap \
+            --quiet \
             scripts/deploy.sh scripts/smoke-test.sh \
             "${VM_NAME}:/tmp/"
           gcloud compute ssh "${VM_NAME}" \
             --project "${PROJECT_ID}" \
             --zone "${VM_ZONE}" \
             --tunnel-through-iap \
+            --quiet \
             --command 'sudo install -o root -g root -m 0755 /tmp/deploy.sh /opt/teamd/deploy.sh && sudo install -o root -g root -m 0755 /tmp/smoke-test.sh /opt/teamd/smoke-test.sh'
 
       - name: VM 배포·health·smoke
@@ -102,6 +104,7 @@ jobs:
             --project "${PROJECT_ID}" \
             --zone "${VM_ZONE}" \
             --tunnel-through-iap \
+            --quiet \
             --command "sudo /opt/teamd/deploy.sh '${{ github.sha }}' '${API_BASE_URL}'"
 
       - name: 테스트 리포트 업로드
@@ -114,4 +117,3 @@ jobs:
             build/test-results/
           if-no-files-found: warn
           retention-days: 7
-

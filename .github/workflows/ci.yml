@@ -1,4 +1,4 @@
-name: PR 검증
+name: CI
 
 on:
   pull_request:
@@ -39,4 +39,3 @@ jobs:
             build/test-results/
           if-no-files-found: warn
           retention-days: 7
-
