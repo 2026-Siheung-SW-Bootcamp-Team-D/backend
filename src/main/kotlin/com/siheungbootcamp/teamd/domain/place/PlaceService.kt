@@ -7,6 +7,7 @@ import com.siheungbootcamp.teamd.global.error.ErrorCode
 import com.siheungbootcamp.teamd.global.web.PageResponse
 import com.siheungbootcamp.teamd.domain.board.BoardRepository
 import com.siheungbootcamp.teamd.domain.board.ParticipantRepository
+import com.siheungbootcamp.teamd.domain.comment.CommentRepository
 import com.siheungbootcamp.teamd.infra.external.kakao.KakaoLocalClient
 import org.springframework.data.domain.Pageable
 import org.springframework.stereotype.Service
@@ -25,6 +26,7 @@ class PlaceService(
     private val places: PlaceRepository,
     private val boards: BoardRepository,
     private val participants: ParticipantRepository,
+    private val comments: CommentRepository,
     private val kakao: KakaoLocalClient,
     private val checks: AuthorizationChecks,
     private val usageCheckers: List<PlaceUsageChecker> = emptyList(),
@@ -119,7 +121,8 @@ class PlaceService(
         )
 
         val saved = places.save(place)
-        return toResponse(saved, 0)
+        val commentCount = comments.countByPlaceIdAndNotDeleted(saved.id ?: throw BusinessException(ErrorCode.INTERNAL_ERROR)).toInt()
+        return toResponse(saved, commentCount)
     }
 
     fun get(boardId: String, placeId: String, principal: ParticipantPrincipal): PlaceResponse {
@@ -130,7 +133,8 @@ class PlaceService(
         val place = places.findByPublicIdAndBoardIdAndDeletedAtIsNull(placeId, boardId_internal)
             ?: throw BusinessException(ErrorCode.RESOURCE_NOT_FOUND)
 
-        return toResponse(place, 0)
+        val commentCount = comments.countByPlaceIdAndNotDeleted(place.id ?: throw BusinessException(ErrorCode.INTERNAL_ERROR)).toInt()
+        return toResponse(place, commentCount)
     }
 
     fun list(
@@ -154,8 +158,20 @@ class PlaceService(
 
         val page = places.findByBoardIdFiltered(boardId_internal, category, minLon, minLat, maxLon, maxLat, pageable)
 
+        // N+1 방지: 한 번의 쿼리로 모든 장소의 댓글 수를 집계
+        val placeIds = page.content.mapNotNull { it.id }
+        val commentCounts = if (placeIds.isNotEmpty()) {
+            comments.countCommentsByPlaceIds(placeIds).associate { row ->
+                val placeId = row[0] as Long
+                val count = row[1] as Long
+                placeId to count
+            }
+        } else {
+            emptyMap()
+        }
+
         return PageResponse(
-            items = page.content.map { toResponse(it, 0) },
+            items = page.content.map { toResponse(it, (commentCounts[it.id] ?: 0L).toInt()) },
             page = PageResponse.PageMetadata(
                 number = pageable.pageNumber + 1,
                 size = pageable.pageSize,
