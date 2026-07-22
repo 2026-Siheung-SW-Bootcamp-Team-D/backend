@@ -6,6 +6,7 @@ import com.siheungbootcamp.teamd.domain.course.CourseStopRole
 import com.siheungbootcamp.teamd.global.crypto.OriginCipher
 import com.siheungbootcamp.teamd.global.job.JobExecutor
 import com.siheungbootcamp.teamd.infra.external.tmap.TmapTransitClient
+import jakarta.persistence.EntityManager
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Component
 import org.springframework.transaction.annotation.Transactional
@@ -32,6 +33,7 @@ class DepartureJobExecutor(
     private val courseStopRepository: CourseStopRepository,
     private val tmapClient: TmapTransitClient,
     private val originCipher: OriginCipher,
+    private val entityManager: EntityManager,
 ) : JobExecutor {
     private val logger = LoggerFactory.getLogger(javaClass)
     private val maxRetries = 3
@@ -45,24 +47,24 @@ class DepartureJobExecutor(
         val target = targets[0]
         logger.info("departure_job_processing participantId=${target.participant.id} courseId=${target.course.id}")
 
-        // 트랜잭션 즉시 종료 (외부 API 호출 전)
-        return true.also {
-            try {
-                executeTransit(target)
-            } catch (e: Exception) {
-                logger.error("departure_job_error participantId=${target.participant.id} error=${e.message}")
-                // 예외 발생 시 나중에 재시도 가능하도록 FAILED가 아니라 계속 CALCULATING으로 둠
-                // (짧은 인메모리 재시도는 호출자가 반복 호출로 구현)
-            }
+        // 같은 트랜잭션 내에서 처리
+        try {
+            executeTransitInternal(target)
+            logger.info("departure_job_processOne_success")
+        } catch (e: Exception) {
+            logger.error("departure_job_processOne_error participantId=${target.participant.id} error=${e.message}", e)
+            markFailed(target)
         }
+        return true
     }
 
-    @Transactional(readOnly = false)
-    private fun executeTransit(calculation: DepartureCalculation) {
+    private fun executeTransitInternal(calculation: DepartureCalculation) {
         val participant = calculation.participant
         val course = calculation.course
         val participantIdInternal = requireNotNull(participant.id)
         val courseIdInternal = requireNotNull(course.id)
+
+        logger.debug("DEBUG: executeTransitInternal started for participantId=$participantIdInternal courseId=$courseIdInternal")
 
         // 참여자 출발지 복호화 (Job Executor 내부에서만 호출)
         if (participant.originCiphertext == null) {
@@ -102,6 +104,7 @@ class DepartureJobExecutor(
         var lastException: Exception? = null
         for (attempt in 1..maxRetries) {
             try {
+                logger.debug("DEBUG: calling tmapClient.searchTransit attempt=$attempt")
                 val summary = tmapClient.searchTransit(
                     startLon = originLon,
                     startLat = originLat,
@@ -110,10 +113,12 @@ class DepartureJobExecutor(
                     arrivalAt = destScheduledAt,
                 )
 
+                logger.debug("DEBUG: tmapClient returned summary=$summary")
                 if (summary == null) {
                     // 경로 없음 → UNAVAILABLE로 저장
                     logger.info("departure_job_unavailable courseId=$courseIdInternal")
                     markUnavailable(calculation)
+                    logger.debug("DEBUG: marked UNAVAILABLE and returning")
                     return
                 }
 
@@ -122,7 +127,9 @@ class DepartureJobExecutor(
                     .minusSeconds(summary.totalSeconds.toLong())
                     .minus(10, ChronoUnit.MINUTES)
 
+                logger.debug("DEBUG: calling markReady")
                 markReady(calculation, summary, recommendedDepartureAt)
+                logger.debug("DEBUG: marked READY and returning")
                 return
             } catch (e: Exception) {
                 lastException = e
@@ -135,10 +142,11 @@ class DepartureJobExecutor(
 
         // 모든 재시도 소진
         logger.error("departure_job_failed_after_retries courseId=${course.id}")
+        logger.debug("DEBUG: calling markFailed")
         markFailed(calculation)
+        logger.debug("DEBUG: marked FAILED")
     }
 
-    @Transactional(readOnly = false)
     private fun markReady(
         calculation: DepartureCalculation,
         summary: TmapTransitClient.TransitSummary,
@@ -153,20 +161,21 @@ class DepartureJobExecutor(
             calculatedAt = Instant.now(),
         )
         departureRepository.save(calculation)
+        entityManager.flush()
         logger.info("departure_job_ready courseId=${calculation.course.id} totalSeconds=${summary.totalSeconds}")
     }
 
-    @Transactional(readOnly = false)
     private fun markUnavailable(calculation: DepartureCalculation) {
         calculation.markUnavailable(Instant.now())
         departureRepository.save(calculation)
+        entityManager.flush()
         logger.info("departure_job_unavailable courseId=${calculation.course.id}")
     }
 
-    @Transactional(readOnly = false)
     private fun markFailed(calculation: DepartureCalculation) {
         calculation.markFailed(Instant.now())
         departureRepository.save(calculation)
+        entityManager.flush()
         logger.warn("departure_job_failed courseId=${calculation.course.id}")
     }
 }
