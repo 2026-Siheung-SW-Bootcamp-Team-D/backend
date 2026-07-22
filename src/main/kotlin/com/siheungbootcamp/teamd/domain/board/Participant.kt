@@ -23,6 +23,7 @@ class Participant(
     @Column(name = "origin_provider_place_id") var originProviderPlaceId: String? = null,
 ) : BaseEntity() {
     fun rename(value: String) { nickname = value }
+    fun deactivate() { active = false }
     fun changeOrigin(label: String, ciphertext: ByteArray, source: OriginSource, providerPlaceId: String?) {
         originLabel = label; originCiphertext = ciphertext; originSource = source; originProviderPlaceId = providerPlaceId
     }

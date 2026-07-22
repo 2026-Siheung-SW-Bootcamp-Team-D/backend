@@ -25,6 +25,7 @@ class Board(
         name?.let { this.name = it }; start?.let { dateStart = it }; end?.let { dateEnd = it }
         if (purpose != null) this.purpose = purpose
     }
+    fun confirm() { status = BoardStatus.CONFIRMED }
     fun close() { status = BoardStatus.CLOSED }
 }
 
