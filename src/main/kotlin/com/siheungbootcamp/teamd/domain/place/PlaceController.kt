@@ -32,7 +32,7 @@ class PlaceController(private val service: PlaceService) {
     @SecurityRequirement(name = "participantToken")
     @ApiResponse(responseCode = "200", description = "검색 성공, 결과 없을 수 있음")
     @ApiResponse(responseCode = "400", description = "쿼리 길이·형식 오류")
-    @ApiResponse(responseCode = "403", description = "다른 보드의 토큰")
+    @ApiResponse(responseCode = "404", description = "다른 보드의 토큰(존재 숨김)")
     @RateLimit(permits = 20, windowSeconds = 60, key = RateLimitKey.PARTICIPANT, scope = RateLimitScope.PARTICIPANT_GLOBAL)
     fun searchPlaceCandidates(
         @PathVariable boardId: String,
@@ -47,7 +47,7 @@ class PlaceController(private val service: PlaceService) {
     @Operation(summary = "주소 후보 검색", description = "도로명 또는 지번 주소를 검색합니다.")
     @SecurityRequirement(name = "participantToken")
     @ApiResponse(responseCode = "200", description = "검색 성공, 결과 없을 수 있음")
-    @ApiResponse(responseCode = "403", description = "다른 보드의 토큰")
+    @ApiResponse(responseCode = "404", description = "다른 보드의 토큰(존재 숨김)")
     @RateLimit(permits = 20, windowSeconds = 60, key = RateLimitKey.PARTICIPANT, scope = RateLimitScope.PARTICIPANT_GLOBAL)
     fun searchAddressCandidates(
         @PathVariable boardId: String,
@@ -59,7 +59,7 @@ class PlaceController(private val service: PlaceService) {
     @Operation(summary = "좌표로 주소 조회", description = "경위도로부터 도로명·지번 주소를 조회합니다.")
     @SecurityRequirement(name = "participantToken")
     @ApiResponse(responseCode = "200", description = "조회 성공, 주소 없을 수 있음")
-    @ApiResponse(responseCode = "403", description = "다른 보드의 토큰")
+    @ApiResponse(responseCode = "404", description = "다른 보드의 토큰(존재 숨김)")
     @RateLimit(permits = 20, windowSeconds = 60, key = RateLimitKey.PARTICIPANT, scope = RateLimitScope.PARTICIPANT_GLOBAL)
     fun getCoordinateAddress(
         @PathVariable boardId: String,
@@ -75,7 +75,7 @@ class PlaceController(private val service: PlaceService) {
     @SecurityRequirement(name = "participantToken")
     @ApiResponse(responseCode = "201", description = "등록 성공")
     @ApiResponse(responseCode = "400", description = "필드 검증 오류")
-    @ApiResponse(responseCode = "403", description = "다른 보드의 토큰")
+    @ApiResponse(responseCode = "404", description = "다른 보드의 토큰(존재 숨김)")
     @ApiResponse(responseCode = "409", description = "보드가 종료됨")
     @RequiresBoardOpen
     @RateLimit(permits = 20, windowSeconds = 60, key = RateLimitKey.PARTICIPANT, scope = RateLimitScope.PARTICIPANT_GLOBAL)
@@ -93,7 +93,7 @@ class PlaceController(private val service: PlaceService) {
     @Operation(summary = "장소 목록 조회", description = "카테고리·정렬·바운딩박스로 필터링하여 조회합니다.")
     @SecurityRequirement(name = "participantToken")
     @ApiResponse(responseCode = "200", description = "조회 성공")
-    @ApiResponse(responseCode = "403", description = "다른 보드의 토큰")
+    @ApiResponse(responseCode = "404", description = "다른 보드의 토큰(존재 숨김)")
     @RateLimit(permits = 60, windowSeconds = 60, key = RateLimitKey.PARTICIPANT, scope = RateLimitScope.PARTICIPANT_GLOBAL)
     fun listPlaces(
         @PathVariable boardId: String,
@@ -124,7 +124,7 @@ class PlaceController(private val service: PlaceService) {
     @Operation(summary = "장소 상세 조회", description = "특정 장소의 정보를 조회합니다.")
     @SecurityRequirement(name = "participantToken")
     @ApiResponse(responseCode = "200", description = "조회 성공")
-    @ApiResponse(responseCode = "403", description = "다른 보드의 토큰")
+    @ApiResponse(responseCode = "404", description = "다른 보드의 토큰(존재 숨김)")
     @ApiResponse(responseCode = "404", description = "장소가 없음")
     @RateLimit(permits = 60, windowSeconds = 60, key = RateLimitKey.PARTICIPANT, scope = RateLimitScope.PARTICIPANT_GLOBAL)
     fun getPlace(
@@ -137,8 +137,8 @@ class PlaceController(private val service: PlaceService) {
     @Operation(summary = "장소 삭제", description = "제안자 또는 호스트만 삭제할 수 있습니다. 이미 삭제된 장소를 재삭제해도 204를 반환합니다.")
     @SecurityRequirement(name = "participantToken")
     @ApiResponse(responseCode = "204", description = "삭제 성공 또는 이미 삭제됨")
-    @ApiResponse(responseCode = "403", description = "권한 없음 또는 다른 보드의 토큰")
-    @ApiResponse(responseCode = "404", description = "장소가 없음")
+    @ApiResponse(responseCode = "403", description = "제안자·호스트가 아님")
+    @ApiResponse(responseCode = "404", description = "장소 또는 다른 보드의 토큰(존재 숨김)")
     @ApiResponse(responseCode = "409", description = "투표·코스에서 사용 중")
     @RequiresBoardOpen
     @RateLimit(permits = 20, windowSeconds = 60, key = RateLimitKey.PARTICIPANT, scope = RateLimitScope.PARTICIPANT_GLOBAL)
