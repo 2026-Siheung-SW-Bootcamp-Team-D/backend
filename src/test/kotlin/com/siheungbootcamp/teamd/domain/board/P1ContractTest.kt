@@ -123,6 +123,8 @@ class P1ContractTest(
             jsonPath("$.components.securitySchemes.participantToken.scheme") { value("bearer") }
             jsonPath("$.paths['/api/v1/boards'].post.summary") { value("보드 생성") }
             jsonPath("$.paths['/api/v1/boards/{boardId}/participants/me'].patch.security[0].participantToken") { isArray() }
+            jsonPath("$.paths['/api/v1/boards/{boardId}'].get.parameters.length()") { value(1) }
+            jsonPath("$.paths['/api/v1/boards/{boardId}'].get.parameters[0].name") { value("boardId") }
         }
     }
 

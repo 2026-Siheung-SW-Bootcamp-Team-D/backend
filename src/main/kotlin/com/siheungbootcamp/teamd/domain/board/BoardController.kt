@@ -11,6 +11,7 @@ import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.*
 import java.net.URI
 import io.swagger.v3.oas.annotations.Operation
+import io.swagger.v3.oas.annotations.Parameter
 import io.swagger.v3.oas.annotations.responses.ApiResponse
 import io.swagger.v3.oas.annotations.security.SecurityRequirement
 import io.swagger.v3.oas.annotations.tags.Tag
@@ -39,7 +40,7 @@ class BoardController(private val service: BoardService, private val properties:
     @ApiResponse(responseCode = "200", description = "조회 성공")
     @ApiResponse(responseCode = "404", description = "보드가 없거나 다른 보드 토큰")
     @RateLimit(permits = 60, windowSeconds = 60, key = RateLimitKey.PARTICIPANT)
-    fun get(@PathVariable boardId: String, @CurrentParticipant principal: ParticipantPrincipal) = service.get(boardId, principal)
+    fun get(@PathVariable boardId: String, @Parameter(hidden = true) @CurrentParticipant principal: ParticipantPrincipal) = service.get(boardId, principal)
 
     @PatchMapping("/boards/{boardId}")
     @Operation(summary = "보드 수정·종료", description = "HOST가 정보 일부를 수정하거나 상태를 CLOSED로 변경합니다.")
@@ -48,13 +49,13 @@ class BoardController(private val service: BoardService, private val properties:
     @ApiResponse(responseCode = "403", description = "HOST가 아님")
     @ApiResponse(responseCode = "409", description = "이미 종료된 보드")
     @RateLimit(permits = 60, windowSeconds = 60, key = RateLimitKey.PARTICIPANT)
-    fun patch(@PathVariable boardId: String, @CurrentParticipant principal: ParticipantPrincipal, @Valid @RequestBody request: PatchBoardRequest) = service.patch(boardId, principal, request)
+    fun patch(@PathVariable boardId: String, @Parameter(hidden = true) @CurrentParticipant principal: ParticipantPrincipal, @Valid @RequestBody request: PatchBoardRequest) = service.patch(boardId, principal, request)
 
     @GetMapping("/boards/{boardId}/invitation")
     @Operation(summary = "현재 초대 정보 조회", description = "HOST에게 저장된 초대 코드 원문과 URL, 만료 시각을 반환합니다.")
     @SecurityRequirement(name = "participantToken")
     @RateLimit(permits = 60, windowSeconds = 60, key = RateLimitKey.PARTICIPANT)
-    fun invitation(@PathVariable boardId: String, @CurrentParticipant principal: ParticipantPrincipal) = service.invitation(boardId, principal, properties.frontendBaseUrl)
+    fun invitation(@PathVariable boardId: String, @Parameter(hidden = true) @CurrentParticipant principal: ParticipantPrincipal) = service.invitation(boardId, principal, properties.frontendBaseUrl)
 
     @GetMapping("/invitations/{inviteCode}")
     @Operation(summary = "초대 확인", description = "인증 없이 초대 대상 보드와 참여 가능 여부를 확인합니다. IP당 분당 30회로 제한됩니다.")
@@ -77,7 +78,7 @@ class BoardController(private val service: BoardService, private val properties:
     @Operation(summary = "참여자 목록", description = "본인 출발지는 상세 정보를, 타인 출발지는 registered 여부만 반환합니다.")
     @SecurityRequirement(name = "participantToken")
     @RateLimit(permits = 60, windowSeconds = 60, key = RateLimitKey.PARTICIPANT)
-    fun participants(@PathVariable boardId: String, @CurrentParticipant principal: ParticipantPrincipal) = service.list(boardId, principal)
+    fun participants(@PathVariable boardId: String, @Parameter(hidden = true) @CurrentParticipant principal: ParticipantPrincipal) = service.list(boardId, principal)
 
     @PatchMapping("/boards/{boardId}/participants/me")
     @Operation(summary = "내 참여자 정보 수정", description = "닉네임 또는 암호화 저장되는 출발지를 변경합니다. 활성 지역 찾기 작업이 있으면 출발지 변경을 거부합니다.")
@@ -86,5 +87,5 @@ class BoardController(private val service: BoardService, private val properties:
     @ApiResponse(responseCode = "409", description = "종료된 보드 또는 활성 지역 찾기 작업")
     @RequiresBoardOpen
     @RateLimit(permits = 60, windowSeconds = 60, key = RateLimitKey.PARTICIPANT)
-    fun patchMe(@PathVariable boardId: String, @CurrentParticipant principal: ParticipantPrincipal, @Valid @RequestBody request: PatchMeRequest) = service.patchMe(boardId, principal, request)
+    fun patchMe(@PathVariable boardId: String, @Parameter(hidden = true) @CurrentParticipant principal: ParticipantPrincipal, @Valid @RequestBody request: PatchMeRequest) = service.patchMe(boardId, principal, request)
 }
