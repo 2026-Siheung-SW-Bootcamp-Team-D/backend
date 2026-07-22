@@ -2,11 +2,11 @@
 set -Eeuo pipefail
 set +x
 
-IMAGE_SHA="${1:?사용법: deploy.sh <commit-sha> <api-base-url>}"
-API_BASE_URL="${2:?사용법: deploy.sh <commit-sha> <api-base-url>}"
+IMAGE_SHA="${1:?사용법: deploy.sh <commit-sha> <api-base-url> <image-repository>}"
+API_BASE_URL="${2:?사용법: deploy.sh <commit-sha> <api-base-url> <image-repository>}"
+IMAGE_REPOSITORY="${3:?사용법: deploy.sh <commit-sha> <api-base-url> <image-repository>}"
 TEAMD_DIR="${TEAMD_DIR:-/opt/teamd}"
 COMPOSE_FILE="${COMPOSE_FILE:-${TEAMD_DIR}/docker-compose.prod.yml}"
-IMAGE_REPOSITORY="${IMAGE_REPOSITORY:-asia-northeast3-docker.pkg.dev/project-f70dd7ef-e577-4b2a-bbd/teamd/teamd}"
 SMOKE_SCRIPT="${SMOKE_SCRIPT:-${TEAMD_DIR}/smoke-test.sh}"
 CURRENT_SHA_FILE="${TEAMD_DIR}/current_sha"
 PREVIOUS_SHA_FILE="${TEAMD_DIR}/previous_sha"
@@ -46,7 +46,6 @@ rollback() {
 
   echo "배포 검증 실패: 직전 이미지로 자동 롤백합니다." >&2
   if [[ -s "${ENV_BACKUP}" && -s "${CURRENT_SHA_FILE}" ]]; then
-    cp "${CURRENT_SHA_FILE}" "${PREVIOUS_SHA_FILE}"
     mv "${ENV_BACKUP}" "${ENV_FILE}"
     chmod 600 "${ENV_FILE}"
     compose pull app || true
@@ -87,4 +86,3 @@ chmod 600 "${CURRENT_SHA_FILE}" "${PREVIOUS_SHA_FILE}" 2>/dev/null || true
 rm -f "${ENV_BACKUP}"
 DEPLOY_SUCCEEDED=true
 echo "배포 완료: ${IMAGE_SHA}"
-

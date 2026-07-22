@@ -19,11 +19,11 @@ jobs:
     env:
       PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
       REGION: ${{ vars.GCP_REGION }}
-      REPOSITORY: ${{ vars.GCP_ARTIFACT_REPOSITORY }}
       VM_NAME: ${{ vars.GCP_VM_NAME }}
       VM_ZONE: ${{ vars.GCP_VM_ZONE }}
       CLOUD_SQL_INSTANCE: ${{ vars.GCP_CLOUD_SQL_INSTANCE }}
       API_BASE_URL: ${{ vars.API_BASE_URL }}
+      IMAGE_REPOSITORY: "${{ vars.GCP_REGION }}-docker.pkg.dev/${{ vars.GCP_PROJECT_ID }}/${{ vars.GCP_ARTIFACT_REPOSITORY }}/teamd"
     steps:
       - name: 소스 체크아웃
         uses: actions/checkout@v4
@@ -73,10 +73,9 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          image="${REGION}-docker.pkg.dev/${PROJECT_ID}/${REPOSITORY}/teamd"
-          docker build --tag "${image}:${{ github.sha }}" --tag "${image}:latest" .
-          docker push "${image}:${{ github.sha }}"
-          docker push "${image}:latest"
+          docker build --tag "${IMAGE_REPOSITORY}:${{ github.sha }}" --tag "${IMAGE_REPOSITORY}:latest" .
+          docker push "${IMAGE_REPOSITORY}:${{ github.sha }}"
+          docker push "${IMAGE_REPOSITORY}:latest"
 
       - name: 배포 스크립트 전송
         shell: bash
@@ -105,7 +104,7 @@ jobs:
             --zone "${VM_ZONE}" \
             --tunnel-through-iap \
             --quiet \
-            --command "sudo /opt/teamd/deploy.sh '${{ github.sha }}' '${API_BASE_URL}'"
+            --command "sudo /opt/teamd/deploy.sh '${{ github.sha }}' '${API_BASE_URL}' '${IMAGE_REPOSITORY}'"
 
       - name: 테스트 리포트 업로드
         if: always()

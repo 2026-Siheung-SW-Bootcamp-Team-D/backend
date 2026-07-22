@@ -34,6 +34,8 @@ class CicdConfigurationTest {
         assertContains(workflow, "workload_identity_provider:")
         assertContains(workflow, "docker push")
         assertContains(workflow, "${'$'}{{ github.sha }}")
+        assertContains(workflow, "IMAGE_REPOSITORY:")
+        assertContains(workflow, "'${'$'}{IMAGE_REPOSITORY}'")
         assertContains(workflow, "--tunnel-through-iap")
         assertContains(workflow, "gcloud sql backups list")
         assertFalse(workflow.contains("credentials_json"))
@@ -50,6 +52,7 @@ class CicdConfigurationTest {
         assertContains(deploy, "/actuator/health")
         assertContains(deploy, "smoke-test.sh")
         assertContains(deploy, "chmod 600")
+        assertFalse(deploy.contains("project-f70dd7ef-e577-4b2a-bbd"))
     }
 
     @Test

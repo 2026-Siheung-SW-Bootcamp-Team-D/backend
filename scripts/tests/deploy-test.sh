@@ -30,20 +30,20 @@ chmod +x "${TEST_DIR}/bin/docker" "${TEST_DIR}/bin/curl" "${TEST_DIR}/teamd/smok
 
 export PATH="${TEST_DIR}/bin:${PATH}"
 export TEAMD_DIR="${TEST_DIR}/teamd"
-export IMAGE_REPOSITORY="registry/teamd"
 export DOCKER_CALLS="${TEST_DIR}/docker-calls.log"
 
-"${ROOT_DIR}/scripts/deploy.sh" good-sha https://example.invalid
+"${ROOT_DIR}/scripts/deploy.sh" good-sha https://example.invalid registry/teamd
 grep -q '^APP_IMAGE=registry/teamd:good-sha$' "${TEAMD_DIR}/.env"
 grep -q '^good-sha$' "${TEAMD_DIR}/current_sha"
 grep -q '^old-sha$' "${TEAMD_DIR}/previous_sha"
 
-if "${ROOT_DIR}/scripts/deploy.sh" broken-sha https://example.invalid; then
+if "${ROOT_DIR}/scripts/deploy.sh" broken-sha https://example.invalid registry/teamd; then
   echo '깨진 이미지 배포가 성공으로 끝났습니다.' >&2
   exit 1
 fi
 grep -q '^APP_IMAGE=registry/teamd:good-sha$' "${TEAMD_DIR}/.env"
 grep -q '^good-sha$' "${TEAMD_DIR}/current_sha"
+grep -q '^old-sha$' "${TEAMD_DIR}/previous_sha"
 grep -q 'compose.*up -d' "${DOCKER_CALLS}"
 if grep -q 'not-a-real-secret' "${DOCKER_CALLS}"; then
   echo '배포 로그에 비밀값이 노출됐습니다.' >&2
@@ -51,4 +51,3 @@ if grep -q 'not-a-real-secret' "${DOCKER_CALLS}"; then
 fi
 
 echo 'deploy.sh 성공·자동 롤백 테스트 통과'
-
