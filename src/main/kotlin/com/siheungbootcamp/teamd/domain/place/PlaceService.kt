@@ -32,6 +32,7 @@ class PlaceService(
     fun searchKeyword(boardId: String, principal: ParticipantPrincipal, query: String, lon: Double?, lat: Double?, radius: Int?): PlaceCandidateResponse {
         checks.requireBoard(principal, boardId)
         validateQuery(query)
+        validateSearchLocation(lon, lat, radius)
 
         val candidates = kakao.searchKeyword(query, lon, lat, radius)
         return PlaceCandidateResponse(
@@ -90,8 +91,7 @@ class PlaceService(
             ?: throw BusinessException(ErrorCode.FORBIDDEN)
 
         // Validate internal category
-        val validCategories = setOf("RESTAURANT", "CAFE", "PLAY", "BAR", "CULTURE", "ATTRACTION", "TRANSIT", "ETC")
-        if (!validCategories.contains(request.internalCategory)) {
+        if (request.internalCategory !in VALID_CATEGORIES) {
             throw BusinessException(ErrorCode.INVALID_ARGUMENT)
         }
 
@@ -146,14 +146,11 @@ class PlaceService(
         val board = boards.findByPublicId(boardId) ?: throw BusinessException(ErrorCode.RESOURCE_NOT_FOUND)
         val boardId_internal = board.id ?: throw BusinessException(ErrorCode.INTERNAL_ERROR)
 
+        if (category != null && category !in VALID_CATEGORIES) throw BusinessException(ErrorCode.INVALID_ARGUMENT)
         val sortBy = sort ?: "RECENT"
-        val page = if (minLon != null && minLat != null && maxLon != null && maxLat != null) {
-            places.findByBoardIdAndBbox(boardId_internal, minLon, minLat, maxLon, maxLat, pageable)
-        } else if (category != null) {
-            places.findByBoardIdAndCategory(boardId_internal, category, sortBy, pageable)
-        } else {
-            places.findActiveByBoardId(boardId_internal, pageable)
-        }
+        if (sortBy !in setOf("RECENT", "COMMENTS")) throw BusinessException(ErrorCode.INVALID_ARGUMENT)
+
+        val page = places.findByBoardIdFiltered(boardId_internal, category, minLon, minLat, maxLon, maxLat, pageable)
 
         return PageResponse(
             items = page.content.map { toResponse(it, 0) },
@@ -232,14 +229,28 @@ class PlaceService(
         }
     }
 
+    /** 명세 6.1: lon·lat은 함께 전달해야 하고, radius는 중심 좌표가 있을 때만 최대 20,000m다. */
+    private fun validateSearchLocation(lon: Double?, lat: Double?, radius: Int?) {
+        if ((lon == null) != (lat == null)) throw BusinessException(ErrorCode.INVALID_ARGUMENT)
+        if (radius != null) {
+            if (lon == null || lat == null) throw BusinessException(ErrorCode.INVALID_ARGUMENT)
+            if (radius <= 0 || radius > 20_000) throw BusinessException(ErrorCode.INVALID_ARGUMENT)
+        }
+    }
+
+    companion object {
+        private val VALID_CATEGORIES = setOf("RESTAURANT", "CAFE", "PLAY", "BAR", "CULTURE", "ATTRACTION", "TRANSIT", "ETC")
+    }
+
     private fun validateProviderUrl(url: String?): String? {
         if (url.isNullOrBlank()) return null
         val allowedHosts = setOf("place.map.kakao.com")
-        return try {
-            val host = URL(url).host
-            if (allowedHosts.contains(host)) url else null
+        val host = try {
+            URL(url).host
         } catch (e: Exception) {
             throw BusinessException(ErrorCode.INVALID_ARGUMENT)
         }
+        if (!allowedHosts.contains(host)) throw BusinessException(ErrorCode.INVALID_ARGUMENT)
+        return url
     }
 }

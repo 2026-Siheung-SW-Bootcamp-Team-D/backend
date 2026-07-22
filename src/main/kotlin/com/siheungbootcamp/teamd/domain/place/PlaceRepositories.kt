@@ -12,46 +12,24 @@ interface PlaceRepository : JpaRepository<Place, Long> {
     fun findByPublicIdAndBoardId(publicId: String, boardId: Long): Place?
     fun findByPublicId(publicId: String): Place?
 
-    @Query("""
-        SELECT p FROM Place p
-        WHERE p.board.id = :boardId
-        AND p.deletedAt IS NULL
-        ORDER BY p.createdAt DESC
-    """)
-    fun findActiveByBoardId(boardId: Long, pageable: Pageable): Page<Place>
-
+    // category와 bbox는 명세상 동시에 적용 가능한 독립 필터다(둘 다 null이면 무시).
+    // sort=COMMENTS는 place_comment가 아직 P3에서 채워지지 않아(P2 시점엔 commentCount 항상 0)
+    // RECENT와 동일하게 createdAt DESC로 둔다. 실제 댓글 수 기준 정렬은 P3에서 재구현해야 한다.
     @Query("""
         SELECT p FROM Place p
         WHERE p.board.id = :boardId
         AND p.deletedAt IS NULL
         AND (:category IS NULL OR p.internalCategory = :category)
-        ORDER BY
-            CASE WHEN :sort = 'COMMENTS' THEN 0 ELSE 1 END,
-            CASE WHEN :sort = 'COMMENTS' THEN 0 ELSE p.createdAt END DESC
-    """)
-    fun findByBoardIdAndCategory(
-        boardId: Long,
-        category: String?,
-        sort: String,
-        pageable: Pageable,
-    ): Page<Place>
-
-    @Query("""
-        SELECT p FROM Place p
-        WHERE p.board.id = :boardId
-        AND p.deletedAt IS NULL
-        AND p.lon >= :minLon
-        AND p.lon <= :maxLon
-        AND p.lat >= :minLat
-        AND p.lat <= :maxLat
+        AND (:minLon IS NULL OR (p.lon >= :minLon AND p.lon <= :maxLon AND p.lat >= :minLat AND p.lat <= :maxLat))
         ORDER BY p.createdAt DESC
     """)
-    fun findByBoardIdAndBbox(
+    fun findByBoardIdFiltered(
         boardId: Long,
-        minLon: Double,
-        minLat: Double,
-        maxLon: Double,
-        maxLat: Double,
+        category: String?,
+        minLon: Double?,
+        minLat: Double?,
+        maxLon: Double?,
+        maxLat: Double?,
         pageable: Pageable,
     ): Page<Place>
 }

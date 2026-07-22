@@ -3,6 +3,8 @@ package com.siheungbootcamp.teamd.domain.place
 import com.siheungbootcamp.teamd.domain.board.RequiresBoardOpen
 import com.siheungbootcamp.teamd.global.auth.CurrentParticipant
 import com.siheungbootcamp.teamd.global.auth.ParticipantPrincipal
+import com.siheungbootcamp.teamd.global.error.BusinessException
+import com.siheungbootcamp.teamd.global.error.ErrorCode
 import com.siheungbootcamp.teamd.global.ratelimit.RateLimit
 import com.siheungbootcamp.teamd.global.ratelimit.RateLimitKey
 import com.siheungbootcamp.teamd.global.ratelimit.RateLimitScope
@@ -99,16 +101,14 @@ class PlaceController(private val service: PlaceService) {
         @PathVariable boardId: String,
         @RequestParam(required = false) category: String?,
         @RequestParam(required = false, defaultValue = "RECENT") sort: String,
-        @RequestParam(required = false) minLon: Double?,
-        @RequestParam(required = false) minLat: Double?,
-        @RequestParam(required = false) maxLon: Double?,
-        @RequestParam(required = false) maxLat: Double?,
+        @RequestParam(required = false) bbox: String?,
         @RequestParam(defaultValue = "1") page: Int,
         @RequestParam(defaultValue = "20") size: Int,
         @Parameter(hidden = true) @CurrentParticipant principal: ParticipantPrincipal,
     ): PlaceListResponse {
         val pageable = PageRequest.of(maxOf(0, page - 1), size.coerceIn(1, 50))
-        val response = service.list(boardId, principal, category, sort, minLon, minLat, maxLon, maxLat, pageable)
+        val box = parseBbox(bbox)
+        val response = service.list(boardId, principal, category, sort, box?.minLon, box?.minLat, box?.maxLon, box?.maxLat, pageable)
         return PlaceListResponse(
             items = response.items,
             page = PlaceListResponse.PageMetadata(
@@ -150,4 +150,14 @@ class PlaceController(private val service: PlaceService) {
         service.delete(boardId, placeId, principal)
         return ResponseEntity.noContent().build()
     }
+
+    /** 명세 7.2: `bbox=minLon,minLat,maxLon,maxLat` 단일 쿼리 파라미터. 형식이 어긋나면 400. */
+    private fun parseBbox(raw: String?): BoundingBox? {
+        if (raw == null) return null
+        val parts = raw.split(",").map { it.trim().toDoubleOrNull() ?: throw BusinessException(ErrorCode.INVALID_ARGUMENT) }
+        if (parts.size != 4) throw BusinessException(ErrorCode.INVALID_ARGUMENT)
+        return BoundingBox(minLon = parts[0], minLat = parts[1], maxLon = parts[2], maxLat = parts[3])
+    }
+
+    private data class BoundingBox(val minLon: Double, val minLat: Double, val maxLon: Double, val maxLat: Double)
 }
