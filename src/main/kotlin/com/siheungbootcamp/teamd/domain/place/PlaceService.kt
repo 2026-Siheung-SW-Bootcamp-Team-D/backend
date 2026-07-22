@@ -172,7 +172,7 @@ class PlaceService(
         val board = boards.findByPublicId(boardId) ?: throw BusinessException(ErrorCode.RESOURCE_NOT_FOUND)
         val boardId_internal = board.id ?: throw BusinessException(ErrorCode.INTERNAL_ERROR)
 
-        val place = places.findByPublicIdAndBoardIdAndDeletedAtIsNull(placeId, boardId_internal)
+        val place = places.findByPublicIdAndBoardId(placeId, boardId_internal)
             ?: throw BusinessException(ErrorCode.RESOURCE_NOT_FOUND)
 
         val proposer = participants.findByIdAndBoardId(place.proposer.id!!, boardId_internal)
@@ -187,6 +187,9 @@ class PlaceService(
         if (!isProposer && !isHost) {
             throw BusinessException(ErrorCode.FORBIDDEN)
         }
+
+        // 이미 삭제된 장소를 같은 권한으로 다시 삭제해도 204(멱등). 참조 검사·재삭제 없이 그대로 종료한다.
+        if (place.deletedAt != null) return
 
         // Check if place is in use
         for (checker in usageCheckers) {

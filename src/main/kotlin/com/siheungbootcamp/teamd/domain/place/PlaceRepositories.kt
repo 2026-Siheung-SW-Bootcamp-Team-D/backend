@@ -9,6 +9,7 @@ import org.springframework.stereotype.Repository
 @Repository
 interface PlaceRepository : JpaRepository<Place, Long> {
     fun findByPublicIdAndBoardIdAndDeletedAtIsNull(publicId: String, boardId: Long): Place?
+    fun findByPublicIdAndBoardId(publicId: String, boardId: Long): Place?
     fun findByPublicId(publicId: String): Place?
 
     @Query("""

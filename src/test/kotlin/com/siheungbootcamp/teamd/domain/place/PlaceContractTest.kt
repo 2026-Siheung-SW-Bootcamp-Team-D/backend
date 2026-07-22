@@ -166,7 +166,6 @@ class PlaceContractTest(
         assertFalse(output.all.contains(secretQuery), "로그에 검색어가 나타나면 안 됨")
     }
 
-    @Disabled("Place creation validation pending")
     @Test
     fun `V2-9 DELETE 삭제 권한 - 제3자 403, 제안자 204, 재삭제 204`() {
         val host = createBoard("삭제 권한 보드", "호스트")
@@ -237,7 +236,6 @@ class PlaceContractTest(
         }
     }
 
-    @Disabled("Place creation validation pending")
     @Test
     fun `place 조회 및 삭제 권한 검증`() {
         val boardA = createBoard("조회 권한 에이", "호스트")
@@ -257,7 +255,8 @@ class PlaceContractTest(
               "internalCategory": "RESTAURANT",
               "provider": "KAKAO",
               "providerPlaceId": "test123",
-              "providerPlaceUrl": "https://place.kakao.com"
+              "providerPlaceUrl": "https://place.map.kakao.com/123",
+              "source": "SEARCH_SELECT"
             }
             """.trimIndent()
         }.andExpect { status { isCreated() } }
