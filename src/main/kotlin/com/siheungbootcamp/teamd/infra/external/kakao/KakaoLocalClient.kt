@@ -1,6 +1,6 @@
 package com.siheungbootcamp.teamd.infra.external.kakao
 
-import com.fasterxml.jackson.databind.ObjectMapper
+import tools.jackson.databind.ObjectMapper
 import com.siheungbootcamp.teamd.global.error.BusinessException
 import com.siheungbootcamp.teamd.global.error.ErrorCode
 import com.siheungbootcamp.teamd.global.external.ExternalApiClient
@@ -65,7 +65,7 @@ class KakaoLocalClient(
 
         return try {
             val root = mapper.readTree(response)
-            root.path("documents").map { doc ->
+            root.path("documents").iterator().asSequence().map { doc ->
                 PlaceCandidate(
                     providerPlaceId = doc.path("id").asText(),
                     name = doc.path("place_name").asText(),
@@ -78,7 +78,7 @@ class KakaoLocalClient(
                     providerPlaceUrl = validateUrl(doc.path("place_url").asText()),
                     distanceMeters = if (doc.has("distance")) doc.path("distance").asInt() else null,
                 )
-            }.take(5)
+            }.take(5).toList()
         } catch (e: Exception) {
             throw BusinessException(ErrorCode.EXTERNAL_BAD_RESPONSE)
         }
@@ -90,7 +90,7 @@ class KakaoLocalClient(
 
         return try {
             val root = mapper.readTree(response)
-            root.path("documents").map { doc ->
+            root.path("documents").iterator().asSequence().map { doc ->
                 AddressCandidate(
                     addressName = doc.path("address_name").asText(),
                     roadAddressName = doc.path("road_address_name").asText(),
@@ -98,7 +98,7 @@ class KakaoLocalClient(
                     lon = doc.path("x").asDouble(),
                     lat = doc.path("y").asDouble(),
                 )
-            }.take(5)
+            }.take(5).toList()
         } catch (e: Exception) {
             throw BusinessException(ErrorCode.EXTERNAL_BAD_RESPONSE)
         }
