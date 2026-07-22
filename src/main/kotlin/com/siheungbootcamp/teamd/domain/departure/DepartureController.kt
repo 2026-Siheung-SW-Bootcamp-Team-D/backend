@@ -6,7 +6,9 @@ import com.siheungbootcamp.teamd.global.ratelimit.RateLimit
 import com.siheungbootcamp.teamd.global.ratelimit.RateLimitKey
 import io.swagger.v3.oas.annotations.Operation
 import io.swagger.v3.oas.annotations.Parameter
+import io.swagger.v3.oas.annotations.media.Content
 import io.swagger.v3.oas.annotations.responses.ApiResponse
+import io.swagger.v3.oas.annotations.security.SecurityRequirement
 import io.swagger.v3.oas.annotations.tags.Tag
 import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
@@ -28,7 +30,9 @@ class DepartureController(
 
     @GetMapping("/departure-guide")
     @Operation(summary = "출발 안내 상태 조회", description = "현재 계산 상태와 결과를 조회한다")
+    @SecurityRequirement(name = "participantToken")
     @ApiResponse(responseCode = "200", description = "조회 성공")
+    @ApiResponse(responseCode = "404", description = "다른 보드의 토큰")
     fun getDepartureGuide(
         @PathVariable boardId: String,
         @Parameter(hidden = true) @CurrentParticipant principal: ParticipantPrincipal,
@@ -61,11 +65,14 @@ class DepartureController(
     }
 
     @PostMapping("/departure-calculations")
-    @Operation(summary = "출발 안내 계산 요청", description = "TMAP을 통해 출발 시간을 계산하도록 요청한다 (비동기)")
-    @ApiResponse(responseCode = "202", description = "계산 요청 접수")
-    @ApiResponse(responseCode = "200", description = "이미 계산된 결과 반환")
-    @ApiResponse(responseCode = "422", description = "출발지 미등록")
-    @ApiResponse(responseCode = "409", description = "확정 코스 또는 첫 만남 없음")
+    @Operation(summary = "출발 안내 계산 요청", description = "TMAP을 통해 출발 시간을 계산하도록 요청한다 (비동기, 202 Accepted 반환)")
+    @SecurityRequirement(name = "participantToken")
+    @ApiResponse(responseCode = "202", description = "계산 요청 접수, Location 헤더로 /departure-guide 링크 제공")
+    @ApiResponse(responseCode = "200", description = "이미 계산된 READY 결과 반환")
+    @ApiResponse(responseCode = "422", description = "출발지 미등록 (ORIGIN_REQUIRED)")
+    @ApiResponse(responseCode = "409", description = "확정 코스 또는 첫 만남 없음 (RESOURCE_CONFLICT)")
+    @ApiResponse(responseCode = "404", description = "다른 보드의 토큰")
+    @ApiResponse(responseCode = "429", description = "참여자당 5회/시간 제한 초과")
     @RateLimit(permits = 5, windowSeconds = 3600, key = RateLimitKey.PARTICIPANT)
     fun requestCalculation(
         @PathVariable boardId: String,
