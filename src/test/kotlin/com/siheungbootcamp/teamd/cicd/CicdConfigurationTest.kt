@@ -56,6 +56,23 @@ class CicdConfigurationTest {
     }
 
     @Test
+    fun `운영 배포 경로는 실제 도메인 설정을 전달하고 sslip 임시 도메인을 포함하지 않는다`() {
+        val workflow = read(".github/workflows/cd.yml")
+        val deploy = read("scripts/deploy.sh")
+        val envExample = read(".env.example")
+
+        assertContains(workflow, "API_DOMAIN: ${'$'}{{ vars.API_DOMAIN }}")
+        assertContains(workflow, "FRONTEND_BASE_URL: ${'$'}{{ vars.FRONTEND_BASE_URL }}")
+        assertContains(workflow, "CORS_ALLOWED_ORIGINS: ${'$'}{{ vars.CORS_ALLOWED_ORIGINS }}")
+        assertContains(deploy, "API_DOMAIN")
+        assertContains(deploy, "dynamic.yml.template")
+        assertContains(envExample, "API_DOMAIN=api.yeondang.com")
+        assertContains(envExample, "FRONTEND_BASE_URL=https://yeondang.com")
+        assertContains(envExample, "CORS_ALLOWED_ORIGINS=https://yeondang.com,https://www.yeondang.com")
+        assertFalse(listOf(workflow, deploy, envExample).any { it.contains("34.50.11.59.sslip.io") })
+    }
+
+    @Test
     fun `smoke test는 생성 조회 잘못된 토큰 흐름을 검증한다`() {
         val smoke = read("scripts/smoke-test.sh")
 
