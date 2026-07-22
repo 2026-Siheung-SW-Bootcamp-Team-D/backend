@@ -5,6 +5,7 @@ import java.nio.file.Path
 import kotlin.io.path.readText
 import kotlin.test.Test
 import kotlin.test.assertContains
+import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
@@ -62,6 +63,15 @@ class CicdConfigurationTest {
     }
 
     @Test
+    fun `smoke test 날짜는 서울 기준으로 내일부터 8일 후까지다`() {
+        val smoke = read("scripts/smoke-test.sh")
+
+        assertContains(smoke, "TZ=Asia/Seoul")
+        assertContains(smoke, "+1 day")
+        assertContains(smoke, "+8 days")
+    }
+
+    @Test
     fun `migration 안전 규칙은 적용 파일 불변과 expand contract를 명시한다`() {
         val rules = read("docs/deployment/migration-safety.md")
 
@@ -72,9 +82,18 @@ class CicdConfigurationTest {
         assertContains(rules, "이전 코드")
     }
 
+    @Test
+    fun `필수 파일 누락 메시지는 실제 상대 경로를 표시한다`() {
+        val missingPath = "missing/i2-file.yml"
+
+        val error = assertFailsWith<AssertionError> { read(missingPath) }
+
+        assertContains(error.message.orEmpty(), missingPath)
+    }
+
     private fun read(relativePath: String): String {
         val path = root.resolve(relativePath)
-        assertTrue(Files.isRegularFile(path), "필수 I2 파일이 없습니다: ${'$'}relativePath")
+        assertTrue(Files.isRegularFile(path), "필수 I2 파일이 없습니다: $relativePath")
         return path.readText()
     }
 }

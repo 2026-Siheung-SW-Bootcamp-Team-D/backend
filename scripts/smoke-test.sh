@@ -15,12 +15,12 @@ request() {
 health_status="$(request "${TEMP_DIR}/health.json" "${BASE_URL}/actuator/health")"
 [[ "${health_status}" == "200" ]] || { echo "health smoke 실패: HTTP ${health_status}" >&2; exit 1; }
 
-today="$(date -u +%F)"
-next_week="$(date -u -d '+7 days' +%F 2>/dev/null || date -u -v+7d +%F)"
+start_date="$(TZ=Asia/Seoul date -d '+1 day' +%F 2>/dev/null || TZ=Asia/Seoul date -v+1d +%F)"
+end_date="$(TZ=Asia/Seoul date -d '+8 days' +%F 2>/dev/null || TZ=Asia/Seoul date -v+8d +%F)"
 create_status="$(request "${TEMP_DIR}/create.json" \
   --request POST \
   --header 'Content-Type: application/json' \
-  --data "{\"name\":\"배포 스모크 보드\",\"dateRange\":{\"start\":\"${today}\",\"end\":\"${next_week}\"},\"purpose\":\"배포 검증\",\"hostNickname\":\"스모크\"}" \
+  --data "{\"name\":\"배포 스모크 보드\",\"dateRange\":{\"start\":\"${start_date}\",\"end\":\"${end_date}\"},\"purpose\":\"배포 검증\",\"hostNickname\":\"스모크\"}" \
   "${BASE_URL}/api/v1/boards")"
 [[ "${create_status}" == "201" ]] || { echo "보드 생성 smoke 실패: HTTP ${create_status}" >&2; exit 1; }
 
@@ -48,4 +48,3 @@ invalid_status="$(request "${TEMP_DIR}/invalid.json" \
 [[ "${invalid_status}" == "401" ]] || { echo "잘못된 토큰 smoke 실패: HTTP ${invalid_status}" >&2; exit 1; }
 
 echo "운영 smoke test 통과"
-
