@@ -204,6 +204,84 @@ class P1ContractTest(
     }
 
     @Test
+    fun `PATCH board는 이미 CLOSED인 보드의 재수정을 409로 거부한다`() {
+        val host = createBoard("종료 재수정 보드", "호스트")
+        mockMvc.patch("/api/v1/boards/${host.boardId}") {
+            bearer(host.token); contentType = MediaType.APPLICATION_JSON; content = """{"status":"CLOSED"}"""
+        }.andExpect { status { isOk() } }
+        mockMvc.patch("/api/v1/boards/${host.boardId}") {
+            bearer(host.token); contentType = MediaType.APPLICATION_JSON; content = """{"name":"수정 불가"}"""
+        }.andExpect { status { isConflict() }; jsonPath("$.error.code") { value("RESOURCE_CONFLICT") } }
+    }
+
+    @Test
+    fun `GET invitation은 MEMBER를 403 교차 보드 토큰을 404로 거부한다`() {
+        val boardA = createBoard("초대 권한 에이", "호스트")
+        val member = join(boardA.inviteCode, "멤버")
+        mockMvc.get("/api/v1/boards/${boardA.boardId}/invitation") { bearer(member) }.andExpect {
+            status { isForbidden() }; jsonPath("$.error.code") { value("FORBIDDEN") }
+        }
+        val boardB = createBoard("초대 권한 비", "호스트")
+        mockMvc.get("/api/v1/boards/${boardB.boardId}/invitation") { bearer(boardA.token) }.andExpect {
+            status { isNotFound() }; jsonPath("$.error.code") { value("RESOURCE_NOT_FOUND") }
+        }
+    }
+
+    @Test
+    fun `POST invitation participants는 만료 초대를 404 CLOSED 보드를 409로 거부한다`() {
+        val expired = createBoard("만료 참여 보드", "호스트")
+        jdbcClient.sql("update board set invite_expires_at=:expired where public_id=:id")
+            .param("expired", OffsetDateTime.parse("2000-01-01T00:00:00Z")).param("id", expired.boardId).update()
+        mockMvc.post("/api/v1/invitations/${expired.inviteCode}/participants") {
+            contentType = MediaType.APPLICATION_JSON; content = """{"nickname":"멤버"}"""
+        }.andExpect { status { isNotFound() }; jsonPath("$.error.code") { value("INVITE_NOT_FOUND") } }
+
+        val closed = createBoard("종료 참여 보드", "호스트")
+        mockMvc.patch("/api/v1/boards/${closed.boardId}") {
+            bearer(closed.token); contentType = MediaType.APPLICATION_JSON; content = """{"status":"CLOSED"}"""
+        }.andExpect { status { isOk() } }
+        mockMvc.post("/api/v1/invitations/${closed.inviteCode}/participants") {
+            contentType = MediaType.APPLICATION_JSON; content = """{"nickname":"멤버"}"""
+        }.andExpect { status { isConflict() }; jsonPath("$.error.code") { value("RESOURCE_CONFLICT") } }
+    }
+
+    @Test
+    fun `GET participants는 교차 보드 토큰을 404로 거부한다`() {
+        val boardA = createBoard("목록 에이", "호스트")
+        val boardB = createBoard("목록 비", "호스트")
+        mockMvc.get("/api/v1/boards/${boardB.boardId}/participants") { bearer(boardA.token) }.andExpect {
+            status { isNotFound() }; jsonPath("$.error.code") { value("RESOURCE_NOT_FOUND") }
+        }
+    }
+
+    @Test
+    fun `보호 엔드포인트는 참여 토큰 누락을 모두 401로 거부한다`() {
+        val host = createBoard("인증 보드", "호스트")
+        mockMvc.get("/api/v1/boards/${host.boardId}").andExpect { status { isUnauthorized() }; jsonPath("$.error.code") { value("AUTHENTICATION_REQUIRED") } }
+        mockMvc.patch("/api/v1/boards/${host.boardId}") {
+            contentType = MediaType.APPLICATION_JSON; content = """{"name":"인증 없음"}"""
+        }.andExpect { status { isUnauthorized() }; jsonPath("$.error.code") { value("AUTHENTICATION_REQUIRED") } }
+        mockMvc.get("/api/v1/boards/${host.boardId}/invitation").andExpect { status { isUnauthorized() } }
+        mockMvc.get("/api/v1/boards/${host.boardId}/participants").andExpect { status { isUnauthorized() } }
+        mockMvc.patch("/api/v1/boards/${host.boardId}/participants/me") {
+            contentType = MediaType.APPLICATION_JSON; content = """{"nickname":"인증 없음"}"""
+        }.andExpect { status { isUnauthorized() } }
+    }
+
+    @Test
+    fun `공개 생성 엔드포인트는 필수 필드 누락을 400으로 거부한다`() {
+        mockMvc.post("/api/v1/boards") {
+            contentType = MediaType.APPLICATION_JSON
+            content = """{"name":"필드 누락","dateRange":{"start":"2099-01-01","end":"2099-01-01"}}"""
+        }.andExpect { status { isBadRequest() }; jsonPath("$.error.code") { value("INVALID_ARGUMENT") } }
+
+        val host = createBoard("참여 필드 보드", "호스트")
+        mockMvc.post("/api/v1/invitations/${host.inviteCode}/participants") {
+            contentType = MediaType.APPLICATION_JSON; content = "{}"
+        }.andExpect { status { isBadRequest() }; jsonPath("$.error.code") { value("INVALID_ARGUMENT") } }
+    }
+
+    @Test
     fun `V1-6 타인의 출발지는 등록 여부 외 키를 노출하지 않고 V1-7 종료 보드 쓰기는 막는다`() {
         val host = createBoard("개인정보 보드", "호스트")
         val member = join(host.inviteCode, "멤버")
