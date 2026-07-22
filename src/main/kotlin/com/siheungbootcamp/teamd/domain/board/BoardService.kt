@@ -54,7 +54,7 @@ class BoardService(
     @Transactional
     fun patch(boardId: String, principal: ParticipantPrincipal, request: PatchBoardRequest): BoardResponse {
         checks.requireBoard(principal, boardId); checks.requireHost(principal)
-        val board = findBoard(boardId)
+        val board = findBoardForUpdate(boardId)
         if (board.status == BoardStatus.CLOSED) conflict()
         request.dateRange?.let(::validateDates)
         if (request.status != null && request.status != BoardStatus.CLOSED) throw BusinessException(ErrorCode.INVALID_ARGUMENT)
@@ -76,7 +76,7 @@ class BoardService(
 
     @Transactional
     fun join(code: String, request: JoinRequest): JoinResponse {
-        val board = validInvitation(code)
+        val board = validInvitationForUpdate(code)
         if (board.status == BoardStatus.CLOSED) conflict()
         val publicId = com.siheungbootcamp.teamd.global.id.PublicId.generate(com.siheungbootcamp.teamd.global.id.IdPrefix.PARTICIPANT)
         val token = ParticipantToken.generate(publicId)
@@ -99,7 +99,8 @@ class BoardService(
     fun patchMe(boardId: String, principal: ParticipantPrincipal, request: PatchMeRequest): ParticipantResponse {
         checks.requireBoard(principal, boardId)
         val participant = participants.findByIdForUpdate(principal.participantId) ?: throw BusinessException(ErrorCode.RESOURCE_NOT_FOUND)
-        if (participant.board.status == BoardStatus.CLOSED) conflict()
+        val board = findBoardForUpdate(boardId)
+        if (board.status == BoardStatus.CLOSED) conflict()
         request.nickname?.let { participant.rename(normalized(it, 1, 20)) }
         request.origin?.let { origin ->
             if (jobChecker.exists(participant.publicId)) conflict()
@@ -116,7 +117,11 @@ class BoardService(
     }
     private fun uniqueInviteCode(): String = generateSequence(inviteCodes::generate).first { boards.findByInviteCode(it) == null }
     private fun validInvitation(code: String): Board = boards.findByInviteCode(code.trim().uppercase(Locale.ROOT))?.takeIf { it.inviteExpiresAt.isAfter(Instant.now(clock)) } ?: throw BusinessException(ErrorCode.INVITE_NOT_FOUND)
+    private fun validInvitationForUpdate(code: String): Board = boards.findByInviteCodeForUpdate(code.trim().uppercase(Locale.ROOT))
+        ?.takeIf { it.inviteExpiresAt.isAfter(Instant.now(clock)) }
+        ?: throw BusinessException(ErrorCode.INVITE_NOT_FOUND)
     private fun findBoard(id: String) = boards.findByPublicId(id) ?: throw BusinessException(ErrorCode.RESOURCE_NOT_FOUND)
+    private fun findBoardForUpdate(id: String) = boards.findByPublicIdForUpdate(id) ?: throw BusinessException(ErrorCode.RESOURCE_NOT_FOUND)
     private fun summary(b: Board) = BoardSummary(b.publicId, b.name, b.status, dateRange = range(b))
     private fun range(b: Board) = DateRangeResponse(b.dateStart, b.dateEnd)
     private fun invitation(b: Board, base: String) = InvitationResponse(b.inviteCode, "${base.trimEnd('/')}/j/${b.inviteCode}", b.inviteExpiresAt)
