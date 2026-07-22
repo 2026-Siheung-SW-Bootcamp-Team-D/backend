@@ -30,15 +30,33 @@ cat > "${TEST_DIR}/bin/curl" <<'MOCK'
 #!/usr/bin/env bash
 exit 0
 MOCK
+cat > "${TEST_DIR}/bin/stat" <<'MOCK'
+#!/usr/bin/env bash
+set -euo pipefail
+if [[ "${1:-}" == '-c' && "${2:-}" == '%a' ]]; then
+  printf '%s\n' 600
+  exit 0
+fi
+exit 1
+MOCK
 cat > "${TEST_DIR}/teamd/smoke-test.sh" <<'MOCK'
 #!/usr/bin/env bash
 exit 0
 MOCK
-chmod +x "${TEST_DIR}/bin/docker" "${TEST_DIR}/bin/curl" "${TEST_DIR}/teamd/smoke-test.sh"
+chmod +x "${TEST_DIR}/bin/docker" "${TEST_DIR}/bin/curl" "${TEST_DIR}/bin/stat" "${TEST_DIR}/teamd/smoke-test.sh"
 
 export PATH="${TEST_DIR}/bin:${PATH}"
 export TEAMD_DIR="${TEST_DIR}/teamd"
 export DOCKER_CALLS="${TEST_DIR}/docker-calls.log"
+
+file_mode() {
+  local file="$1"
+  if stat -c '%a' "${file}" >/dev/null 2>&1; then
+    stat -c '%a' "${file}"
+  else
+    stat -f '%Lp' "${file}"
+  fi
+}
 
 "${ROOT_DIR}/scripts/deploy.sh" good-sha https://example.invalid registry/teamd api.yeondang.com https://yeondang.com https://yeondang.com,https://www.yeondang.com
 grep -q '^APP_IMAGE=registry/teamd:good-sha$' "${TEAMD_DIR}/.env"
@@ -49,7 +67,7 @@ grep -q '^CORS_ALLOWED_ORIGIN_PATTERNS=https://team-d-\*.vercel.app$' "${TEAMD_D
 grep -q '^DB_PASSWORD=not-a-real-secret$' "${TEAMD_DIR}/.env"
 grep -q '^TOKEN_PEPPER=not-a-real-pepper$' "${TEAMD_DIR}/.env"
 grep -q "Host(\`api.yeondang.com\`)" "${TEAMD_DIR}/dynamic.yml"
-test "$(stat -f '%Lp' "${TEAMD_DIR}/.env")" = 600
+test "$(file_mode "${TEAMD_DIR}/.env")" = 600
 grep -q '^good-sha$' "${TEAMD_DIR}/current_sha"
 grep -q '^old-sha$' "${TEAMD_DIR}/previous_sha"
 
