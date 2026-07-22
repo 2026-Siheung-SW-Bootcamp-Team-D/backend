@@ -1,0 +1,13 @@
+.git
+.gradle
+.idea
+.kotlin
+.omc
+build
+out
+*.iml
+.env
+.env.*
+!.env.example
+README.md
+docs

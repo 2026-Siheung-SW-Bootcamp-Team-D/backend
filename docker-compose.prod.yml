@@ -1,0 +1,40 @@
+# 운영용 compose. Traefik이 80/443만 외부에 열고, 앱 컨테이너의 8080은 호스트에 노출하지 않는다.
+# 비밀은 VM 시작 스크립트가 Secret Manager에서 읽어 만든 0600 권한 .env 파일로 주입한다 (08-infra-cicd-gcp.md T-I0-3).
+services:
+  traefik:
+    image: traefik:v3.5
+    command:
+      - --providers.docker=true
+      - --providers.docker.exposedbydefault=false
+      - --entrypoints.web.address=:80
+      - --entrypoints.websecure.address=:443
+      - --entrypoints.web.http.redirections.entrypoint.to=websecure
+      - --entrypoints.web.http.redirections.entrypoint.scheme=https
+      - --certificatesresolvers.le.acme.httpchallenge=true
+      - --certificatesresolvers.le.acme.httpchallenge.entrypoint=web
+      - --certificatesresolvers.le.acme.email=${ACME_EMAIL}
+      - --certificatesresolvers.le.acme.storage=/letsencrypt/acme.json
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - traefik-certs:/letsencrypt
+    restart: unless-stopped
+
+  app:
+    image: ${APP_IMAGE:-teamd-backend:local}
+    build: .
+    env_file: [.env]
+    environment:
+      SPRING_PROFILES_ACTIVE: prod
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.teamd.rule=Host(`${API_DOMAIN}`)
+      - traefik.http.routers.teamd.entrypoints=websecure
+      - traefik.http.routers.teamd.tls.certresolver=le
+      - traefik.http.services.teamd.loadbalancer.server.port=8080
+    restart: unless-stopped
+
+volumes:
+  traefik-certs:
