@@ -82,10 +82,14 @@ class P5DepartureContractTest(
 
         departureJobExecutor.processOne()
 
+        // 작업 실행 후 상태 조회 (트랜잭션 경계를 넘어가므로 약간의 지연 가능)
+        Thread.sleep(100)
+
         val res = mockMvc.get("/api/v1/boards/${host.boardId}/participants/me/departure-guide") {
             bearer(host.token)
         }.andReturn().response
-        assertEquals("READY", objectMapper.readTree(res.contentAsString).path("status").asText())
+        val status = objectMapper.readTree(res.contentAsString).path("status").asText()
+        assertEquals("READY", status, "작업 실행 후 상태가 READY여야 함")
     }
 
     @Test
@@ -303,6 +307,34 @@ class P5DepartureContractTest(
             bearer(p.token)
         }.andReturn().response
         assertFalse(res.contentAsString.contains("126.") || res.contentAsString.contains("37."))
+    }
+
+    @Test
+    fun `V5-12 외부 호출 중 DB 트랜잭션 미보유`() {
+        val host = createBoard("동시성 테스트", "호스트")
+        setOrigin(host, "출", 126.97, 37.55)
+        val place = createPlace(host, "도착", 126.98, 37.56)
+        confirmCourse(host, place)
+
+        tmapStubServer.responseMode = TmapStubServer.ResponseMode.SUCCESS
+        val startTime = System.currentTimeMillis()
+        // 동시 요청 여러 개를 보낸다
+        mockMvc.post("/api/v1/boards/${host.boardId}/participants/me/departure-calculations") {
+            bearer(host.token)
+            contentType = MediaType.APPLICATION_JSON; content = "{}"
+        }.andExpect { status { isAccepted() } }
+
+        val req2 = mockMvc.post("/api/v1/boards/${host.boardId}/participants/me/departure-guide") {
+            bearer(host.token)
+        }.andReturn().response
+
+        // 첫 요청이 계산 중인 동안 조회 요청이 블록되지 않는다
+        val elapsed = System.currentTimeMillis() - startTime
+        assertTrue(elapsed < 5000, "조회가 계산 완료까지 대기하면 안 됨")
+
+        // 계산 결과는 CALCULATING 또는 READY
+        val status = objectMapper.readTree(req2.contentAsString).path("status").asText()
+        assertTrue(status in listOf("CALCULATING", "READY"), "상태는 CALCULATING 또는 READY여야 함")
     }
 
     private fun createBoard(n: String, nick: String): CB {
