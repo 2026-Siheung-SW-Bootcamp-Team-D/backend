@@ -59,18 +59,23 @@ class CicdConfigurationTest {
     fun `운영 배포 경로는 실제 도메인 설정을 전달하고 sslip 임시 도메인을 포함하지 않는다`() {
         val workflow = read(".github/workflows/cd.yml")
         val deploy = read("scripts/deploy.sh")
+        val deployTest = read("scripts/tests/deploy-test.sh")
         val envExample = read(".env.example")
 
         assertContains(workflow, "API_DOMAIN: ${'$'}{{ vars.API_DOMAIN }}")
         assertContains(workflow, "FRONTEND_BASE_URL: ${'$'}{{ vars.FRONTEND_BASE_URL }}")
         assertContains(workflow, "CORS_ALLOWED_ORIGINS: ${'$'}{{ vars.CORS_ALLOWED_ORIGINS }}")
+        assertContains(workflow, "'${'$'}{API_DOMAIN}' '${'$'}{FRONTEND_BASE_URL}' '${'$'}{CORS_ALLOWED_ORIGINS}'")
         assertContains(workflow, "scripts/deploy.sh scripts/smoke-test.sh dynamic.yml.template")
         assertContains(deploy, "API_DOMAIN")
         assertContains(deploy, "dynamic.yml.template")
-        assertContains(envExample, "API_DOMAIN=api.yeondang.com")
-        assertContains(envExample, "FRONTEND_BASE_URL=https://yeondang.com")
-        assertContains(envExample, "CORS_ALLOWED_ORIGINS=https://yeondang.com,https://www.yeondang.com")
-        assertFalse(listOf(workflow, deploy, envExample).any { it.contains("34.50.11.59.sslip.io") })
+        assertContains(envExample, "API_DOMAIN=\n")
+        assertContains(envExample, "FRONTEND_BASE_URL=\n")
+        assertContains(envExample, "CORS_ALLOWED_ORIGINS=\n")
+        assertFalse(envExample.contains("api.yeondang.com"))
+        assertFalse(envExample.contains("https://yeondang.com"))
+        assertFalse(listOf(workflow, deploy, envExample).any { it.contains("sslip.io") })
+        assertContains(deployTest, "CORS_ALLOWED_ORIGIN_PATTERNS=https://team-d-*.vercel.app")
     }
 
     @Test
