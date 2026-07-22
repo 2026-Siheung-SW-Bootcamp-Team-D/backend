@@ -28,6 +28,7 @@ class SecurityConfig {
         requestIdFilter: RequestIdFilter,
         authenticationEntryPoint: AuthenticationEntryPoint,
     ): SecurityFilterChain = http
+        .cors { }
         .csrf { it.disable() }
         .sessionManagement { it.sessionCreationPolicy(SessionCreationPolicy.STATELESS) }
         .formLogin { it.disable() }

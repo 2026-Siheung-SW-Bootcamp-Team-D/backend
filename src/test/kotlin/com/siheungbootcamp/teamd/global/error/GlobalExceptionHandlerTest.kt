@@ -6,6 +6,7 @@ import org.springframework.http.MediaType
 import org.springframework.test.web.servlet.MockMvc
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath
+import org.springframework.test.web.servlet.result.MockMvcResultMatchers.header
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.status
 import org.springframework.test.web.servlet.setup.MockMvcBuilders
 import org.springframework.test.web.servlet.setup.StandaloneMockMvcBuilder
@@ -29,6 +30,7 @@ class GlobalExceptionHandlerTest {
                 .header("X-Request-Id", "c1b17953-1f0c-4dfa-8f8e-0a41a5db5fd5"),
         )
             .andExpect(status().isConflict)
+            .andExpect(header().string("X-Request-Id", "c1b17953-1f0c-4dfa-8f8e-0a41a5db5fd5"))
             .andExpect(jsonPath("$.error.code").value("RESOURCE_CONFLICT"))
             .andExpect(jsonPath("$.error.message").value("현재 상태와 요청이 충돌했습니다."))
             .andExpect(jsonPath("$.error.details.resource").value("board"))

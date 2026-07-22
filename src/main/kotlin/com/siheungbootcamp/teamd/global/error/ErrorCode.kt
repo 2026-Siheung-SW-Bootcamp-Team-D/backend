@@ -23,7 +23,6 @@ enum class ErrorCode(
     PLACE_IN_USE(HttpStatus.CONFLICT, "코스에 포함된 장소입니다. 먼저 코스에서 제거해 주세요."),
     VERSION_MISMATCH(HttpStatus.PRECONDITION_FAILED, "다른 변경 사항이 있어 최신 초안을 다시 확인해 주세요."),
     ORIGIN_REQUIRED(HttpStatus.UNPROCESSABLE_ENTITY, "출발지 정보가 필요합니다."),
-    ROUTE_UNAVAILABLE(HttpStatus.UNPROCESSABLE_ENTITY, "대중교통 경로를 찾을 수 없습니다."),
     RATE_LIMITED(HttpStatus.TOO_MANY_REQUESTS, "요청이 많습니다. 잠시 후 다시 시도해 주세요."),
     EXTERNAL_BAD_RESPONSE(HttpStatus.BAD_GATEWAY, "외부 서비스 응답을 처리할 수 없습니다."),
     EXTERNAL_UNAVAILABLE(HttpStatus.SERVICE_UNAVAILABLE, "외부 서비스를 일시적으로 사용할 수 없습니다."),
