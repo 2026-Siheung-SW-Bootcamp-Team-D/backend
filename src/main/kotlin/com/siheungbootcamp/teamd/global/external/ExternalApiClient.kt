@@ -17,7 +17,7 @@ import java.time.Instant
  * - 오류 매핑: 파싱 실패/계약 위반 → 502, 5xx/타임아웃/429 소진 → 503, 일일 예산 초과 → 503
  * - 로깅: 공급자·엔드포인트·상태코드·지연시간·재시도만. 원문/키/응답본문 절대 금지
  *
- * P5(TMAP)·P6(ODsay)가 재사용하는 레퍼런스 구현이므로 provider 이름을 파라미터로 받는다.
+ * 다른 외부 API 연동 단계가 재사용하는 레퍼런스 구현이므로 provider 이름을 파라미터로 받는다.
  */
 class ExternalApiClient(
     private val provider: String,
@@ -29,42 +29,60 @@ class ExternalApiClient(
     fun get(url: String, headers: Map<String, String> = emptyMap()): String {
         quotaManager.checkQuota(provider)
         val startTime = Instant.now()
-        var lastException: Exception? = null
-        var retryCount = 0
 
         repeat(3) { attempt ->
             try {
-                val duration = Duration.between(startTime, Instant.now())
-                val response = restClient.get()
+                // onStatus를 모든 상태코드에 대해 no-op으로 등록해 4xx/5xx도 예외 없이 toEntity로 받는다.
+                // 그래야 429의 Retry-After 헤더와 5xx/기타 4xx를 구분해서 직접 분기할 수 있다.
+                val entity = restClient.get()
                     .uri(url)
                     .headers { httpHeaders ->
                         headers.forEach { (key, value) -> httpHeaders.set(key, value) }
                     }
                     .accept(MediaType.APPLICATION_JSON)
                     .retrieve()
-                    .body(String::class.java)
-                    ?: throw BusinessException(ErrorCode.EXTERNAL_BAD_RESPONSE)
+                    .onStatus({ true }) { _, _ -> }
+                    .toEntity(String::class.java)
 
-                quotaManager.incrementCount(provider)
-                logger.info("external_api_call provider=$provider attempt=${attempt + 1} status=200 duration_ms=${duration.toMillis()}")
-                return response
-            } catch (e: RestClientException) {
-                retryCount++
-                lastException = e
+                val duration = Duration.between(startTime, Instant.now())
+                val status = entity.statusCode
 
-                if (e.cause is java.net.SocketTimeoutException || e.message?.contains("Read timed out") == true) {
-                    logger.warn("external_api_call provider=$provider attempt=${attempt + 1} error=timeout retries_remaining=${2 - attempt}")
+                if (status.is2xxSuccessful) {
+                    val body = entity.body ?: throw BusinessException(ErrorCode.EXTERNAL_BAD_RESPONSE)
+                    quotaManager.incrementCount(provider)
+                    logger.info("external_api_call provider=$provider attempt=${attempt + 1} status=${status.value()} duration_ms=${duration.toMillis()}")
+                    return body
+                }
+
+                if (status.value() == 429) {
+                    val retryAfterSeconds = entity.headers.getFirst("Retry-After")?.toLongOrNull()
+                    logger.warn("external_api_call provider=$provider attempt=${attempt + 1} status=429 retries_remaining=${2 - attempt}")
                     if (attempt < 2) {
-                        val waitMs = (1L shl attempt) * 1000 // 1s, 2s, 4s
+                        val waitMs = retryAfterSeconds?.let { it * 1000 } ?: ((1L shl attempt) * 1000) // 1s, 2s, 4s
                         Thread.sleep(waitMs)
+                        return@repeat
                     }
+                    // 3회 재시도를 모두 429로 소진하면 아래로 빠져나가 EXTERNAL_UNAVAILABLE로 수렴한다.
+                } else if (status.is5xxServerError) {
+                    logger.warn("external_api_call provider=$provider attempt=${attempt + 1} status=${status.value()} error=server_error")
+                    throw BusinessException(ErrorCode.EXTERNAL_UNAVAILABLE)
                 } else {
+                    logger.warn("external_api_call provider=$provider attempt=${attempt + 1} status=${status.value()} error=bad_response")
                     throw BusinessException(ErrorCode.EXTERNAL_BAD_RESPONSE)
+                }
+            } catch (e: RestClientException) {
+                // 상태코드 기반 분기는 위에서 이미 처리했으므로, 여기 걸리는 건 타임아웃 등 순수 통신 오류다.
+                logger.warn("external_api_call provider=$provider attempt=${attempt + 1} error=timeout retries_remaining=${2 - attempt}")
+                if (attempt < 2) {
+                    val waitMs = (1L shl attempt) * 1000 // 1s, 2s, 4s
+                    Thread.sleep(waitMs)
+                } else {
+                    throw BusinessException(ErrorCode.EXTERNAL_UNAVAILABLE)
                 }
             }
         }
 
-        logger.warn("external_api_call provider=$provider error=unavailable retry_count=$retryCount")
+        logger.warn("external_api_call provider=$provider error=unavailable retry_count=3")
         throw BusinessException(ErrorCode.EXTERNAL_UNAVAILABLE)
     }
 }
