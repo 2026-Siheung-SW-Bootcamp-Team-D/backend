@@ -115,6 +115,18 @@ class P1ContractTest(
     }
 
     @Test
+    fun `Swagger 문서는 P1 엔드포인트와 Bearer 참여 토큰 인증을 공개한다`() {
+        mockMvc.get("/v3/api-docs").andExpect {
+            status { isOk() }
+            jsonPath("$.info.title") { value("teamd-backend API") }
+            jsonPath("$.components.securitySchemes.participantToken.type") { value("http") }
+            jsonPath("$.components.securitySchemes.participantToken.scheme") { value("bearer") }
+            jsonPath("$.paths['/api/v1/boards'].post.summary") { value("보드 생성") }
+            jsonPath("$.paths['/api/v1/boards/{boardId}/participants/me'].patch.security[0].participantToken") { isArray() }
+        }
+    }
+
+    @Test
     fun `V1-6 타인의 출발지는 등록 여부 외 키를 노출하지 않고 V1-7 종료 보드 쓰기는 막는다`() {
         val host = createBoard("개인정보 보드", "호스트")
         val member = join(host.inviteCode, "멤버")
