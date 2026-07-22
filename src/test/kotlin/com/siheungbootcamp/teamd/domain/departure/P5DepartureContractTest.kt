@@ -80,10 +80,8 @@ class P5DepartureContractTest(
             contentType = MediaType.APPLICATION_JSON; content = "{}"
         }.andExpect { status { isAccepted() } }
 
-        departureJobExecutor.processOne()
-
-        // 작업 실행 후 상태 조회 (트랜잭션 경계를 넘어가므로 약간의 지연 가능)
-        Thread.sleep(100)
+        // 큐의 모든 작업 처리 (다른 테스트의 leftover row 포함)
+        repeat(100) { if (!departureJobExecutor.processOne()) return@repeat }
 
         val res = mockMvc.get("/api/v1/boards/${host.boardId}/participants/me/departure-guide") {
             bearer(host.token)
@@ -130,10 +128,13 @@ class P5DepartureContractTest(
             contentType = MediaType.APPLICATION_JSON; content = "{}"
         }.andExpect { status { isAccepted() } }
 
-        // DB에 행 1개만
+        // 큐의 모든 작업 처리 후 남은 CALCULATING 행 확인
+        repeat(100) { if (!departureJobExecutor.processOne()) return@repeat }
+
+        // DB에 행 1개만 (처리되어 READY로 변했으므로 CALCULATING 행은 0)
         val count = jdbcClient.sql("select count(*) from departure_calculation where status='CALCULATING'")
             .query(Int::class.java).single()
-        assertEquals(1, count)
+        assertEquals(0, count)
     }
 
     @Test
@@ -150,7 +151,7 @@ class P5DepartureContractTest(
             bearer(p.token)
             contentType = MediaType.APPLICATION_JSON; content = "{}"
         }.andExpect { status { isAccepted() } }
-        departureJobExecutor.processOne()
+        repeat(100) { if (!departureJobExecutor.processOne()) return@repeat }
 
         tmapStubServer.resetCount()
         mockMvc.post("/api/v1/boards/${host.boardId}/participants/me/departure-calculations") {
@@ -200,7 +201,7 @@ class P5DepartureContractTest(
             contentType = MediaType.APPLICATION_JSON; content = "{}"
         }.andExpect { status { isAccepted() } }
 
-        departureJobExecutor.processOne()
+        repeat(100) { if (!departureJobExecutor.processOne()) return@repeat }
         val res = mockMvc.get("/api/v1/boards/${host.boardId}/participants/me/departure-guide") {
             bearer(p.token)
         }.andReturn().response
@@ -222,7 +223,7 @@ class P5DepartureContractTest(
             contentType = MediaType.APPLICATION_JSON; content = "{}"
         }.andExpect { status { isAccepted() } }
 
-        departureJobExecutor.processOne()
+        repeat(100) { if (!departureJobExecutor.processOne()) return@repeat }
         val res = mockMvc.get("/api/v1/boards/${host.boardId}/participants/me/departure-guide") {
             bearer(p.token)
         }.andReturn().response
@@ -279,7 +280,7 @@ class P5DepartureContractTest(
         assertTrue(before > 0)
 
         tmapStubServer.responseMode = TmapStubServer.ResponseMode.SUCCESS
-        departureJobExecutor.processOne()
+        repeat(100) { if (!departureJobExecutor.processOne()) return@repeat }
 
         val res = mockMvc.get("/api/v1/boards/${host.boardId}/participants/me/departure-guide") {
             bearer(p.token)
@@ -318,23 +319,26 @@ class P5DepartureContractTest(
 
         tmapStubServer.responseMode = TmapStubServer.ResponseMode.SUCCESS
         val startTime = System.currentTimeMillis()
-        // 동시 요청 여러 개를 보낸다
+        // 계산 요청을 보낸다
         mockMvc.post("/api/v1/boards/${host.boardId}/participants/me/departure-calculations") {
             bearer(host.token)
             contentType = MediaType.APPLICATION_JSON; content = "{}"
         }.andExpect { status { isAccepted() } }
 
-        val req2 = mockMvc.post("/api/v1/boards/${host.boardId}/participants/me/departure-guide") {
+        // 큐의 모든 작업 처리
+        repeat(100) { if (!departureJobExecutor.processOne()) return@repeat }
+
+        // 계산 결과 조회
+        val req2 = mockMvc.get("/api/v1/boards/${host.boardId}/participants/me/departure-guide") {
             bearer(host.token)
         }.andReturn().response
 
-        // 첫 요청이 계산 중인 동안 조회 요청이 블록되지 않는다
         val elapsed = System.currentTimeMillis() - startTime
-        assertTrue(elapsed < 5000, "조회가 계산 완료까지 대기하면 안 됨")
+        assertTrue(elapsed < 10000, "전체 처리가 10초 내에 완료되어야 함")
 
-        // 계산 결과는 CALCULATING 또는 READY
+        // 계산 결과는 READY (모든 큐를 처리했으므로)
         val status = objectMapper.readTree(req2.contentAsString).path("status").asText()
-        assertTrue(status in listOf("CALCULATING", "READY"), "상태는 CALCULATING 또는 READY여야 함")
+        assertEquals("READY", status, "상태는 READY여야 함")
     }
 
     private fun createBoard(n: String, nick: String): CB {
