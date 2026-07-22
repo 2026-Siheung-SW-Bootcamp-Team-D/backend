@@ -11,12 +11,12 @@ data class CreatePlaceRequest(
     @field:Size(min = 1, max = 100) val name: String,
     @field:DecimalMin("-180.0") @field:DecimalMax("180.0") val lon: Double,
     @field:DecimalMin("-90.0") @field:DecimalMax("90.0") val lat: Double,
-    val addressName: String?,
-    val roadAddressName: String?,
+    @field:Size(max = 200) val addressName: String?,
+    @field:Size(max = 200) val roadAddressName: String?,
     @field:Size(min = 1, max = 100) val internalCategory: String,
-    val provider: String?,
-    val providerPlaceId: String?,
-    val providerPlaceUrl: String?,
+    @field:Size(max = 20) val provider: String?,
+    @field:Size(max = 100) val providerPlaceId: String?,
+    @field:Size(max = 2048) val providerPlaceUrl: String?,
     val source: String,
 )
 
