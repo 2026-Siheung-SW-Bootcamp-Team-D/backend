@@ -7,6 +7,7 @@ import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.MethodArgumentNotValidException
 import org.springframework.web.bind.annotation.ExceptionHandler
 import org.springframework.web.bind.annotation.RestControllerAdvice
+import org.springframework.http.converter.HttpMessageNotReadableException
 
 /**
  * 컨트롤러와 서비스에서 발생한 예외를 API 명세의 오류 JSON으로 변환하는 공통 처리기다.
@@ -35,6 +36,13 @@ class GlobalExceptionHandler {
         }
         return response(ErrorCode.INVALID_ARGUMENT, details, request)
     }
+
+    /** JSON 필드 누락·날짜 파싱·enum 불일치는 내부 오류가 아니라 잘못된 클라이언트 입력이다. */
+    @ExceptionHandler(HttpMessageNotReadableException::class)
+    fun handleUnreadableMessage(
+        exception: HttpMessageNotReadableException,
+        request: HttpServletRequest,
+    ): ResponseEntity<ErrorResponse> = response(ErrorCode.INVALID_ARGUMENT, emptyMap(), request)
 
     @ExceptionHandler(Exception::class)
     fun handleUnexpectedException(
