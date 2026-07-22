@@ -14,7 +14,7 @@ class CicdConfigurationTest {
 
     @Test
     fun `PR 워크플로는 배포 없이 빌드와 테스트 결과 업로드만 수행한다`() {
-        val workflow = read(".github/workflows/pr.yml")
+        val workflow = read(".github/workflows/ci.yml")
 
         assertContains(workflow, "pull_request:")
         assertContains(workflow, "./gradlew build")
@@ -25,7 +25,7 @@ class CicdConfigurationTest {
 
     @Test
     fun `배포 워크플로는 WIF와 IAP를 사용해 SHA 이미지를 배포한다`() {
-        val workflow = read(".github/workflows/deploy.yml")
+        val workflow = read(".github/workflows/cd.yml")
 
         assertContains(workflow, "id-token: write")
         assertContains(workflow, "google-github-actions/auth@")
