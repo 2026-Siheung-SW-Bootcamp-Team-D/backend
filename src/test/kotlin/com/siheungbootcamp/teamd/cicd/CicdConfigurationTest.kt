@@ -18,6 +18,7 @@ class CicdConfigurationTest {
         val workflow = read(".github/workflows/ci.yml")
 
         assertContains(workflow, "pull_request:")
+        assertContains(workflow, "branches: [main, develop]")
         assertContains(workflow, "./gradlew build")
         assertContains(workflow, "actions/upload-artifact@")
         assertFalse(workflow.contains("gcloud compute"))
