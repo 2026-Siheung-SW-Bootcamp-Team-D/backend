@@ -111,6 +111,13 @@ class OdsayStubServer(port: Int = 0) : AutoCloseable {
             }
             ResponseMode.NO_INTERSECTION -> {
                 // 교집합이 없도록 겹치지 않는 폴리곤 반환
+                // 홀수 카운트(count % 2 == 1): lon 126.5-126.6, lat 37.0-37.1
+                // 짝수 카운트(count % 2 == 0): lon 126.3-126.4, lat 37.2-37.3 (겹치지 않음)
+                val polygon = if (count % 2 == 1) {
+                    """[[[126.5, 37.0], [126.6, 37.0], [126.6, 37.1], [126.5, 37.1], [126.5, 37.0]]]"""
+                } else {
+                    """[[[126.3, 37.2], [126.4, 37.2], [126.4, 37.3], [126.3, 37.3], [126.3, 37.2]]]"""
+                }
                 val response = """
                 {
                   "result": {
@@ -118,7 +125,7 @@ class OdsayStubServer(port: Int = 0) : AutoCloseable {
                       {
                         "geometry": {
                           "type": "Polygon",
-                          "coordinates": [[[126.5, 37.0], [126.6, 37.0], [126.6, 37.1], [126.5, 37.1], [126.5, 37.0]]]
+                          "coordinates": $polygon
                         }
                       }
                     ]
