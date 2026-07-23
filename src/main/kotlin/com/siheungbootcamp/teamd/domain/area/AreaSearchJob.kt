@@ -30,7 +30,7 @@ class AreaSearchJob(
     val durationMin: Int,
     @JsonValue
     @Column(name = "snapshot", nullable = false, columnDefinition = "jsonb")
-    val snapshot: JsonNode,
+    val snapshotJson: String,
 ) {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -41,11 +41,11 @@ class AreaSearchJob(
 
     @JsonValue
     @Column(name = "progress", columnDefinition = "jsonb")
-    var progress: JsonNode? = null
+    var progressJson: String? = null
 
     @JsonValue
     @Column(name = "result", columnDefinition = "jsonb")
-    var result: JsonNode? = null
+    var resultJson: String? = null
 
     @Column(name = "error_code")
     var errorCode: String? = null
@@ -76,7 +76,7 @@ class AreaSearchJob(
 
     fun markSucceeded(result: JsonNode) {
         this.status = "SUCCEEDED"
-        this.result = result
+        this.resultJson = ObjectMapper().writeValueAsString(result)
         this.finishedAt = Instant.now()
         this.updatedAt = Instant.now()
     }
@@ -89,10 +89,14 @@ class AreaSearchJob(
     }
 
     fun updateProgress(phase: String, details: JsonNode) {
-        if (this.progress == null) {
-            this.progress = ObjectMapper().createObjectNode()
+        val mapper = ObjectMapper()
+        val currentProgress = if (this.progressJson == null) {
+            mapper.createObjectNode()
+        } else {
+            mapper.readTree(this.progressJson) as ObjectNode
         }
-        (this.progress as ObjectNode).set(phase, details)
+        currentProgress.set(phase, details)
+        this.progressJson = mapper.writeValueAsString(currentProgress)
         this.updatedAt = Instant.now()
     }
 }

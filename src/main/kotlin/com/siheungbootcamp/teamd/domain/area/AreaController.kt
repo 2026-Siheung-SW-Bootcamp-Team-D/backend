@@ -24,7 +24,7 @@ class AreaController(
         @RequestBody request: CreateAreaSearchJobRequest,
     ): ResponseEntity<CreateAreaSearchJobResponse> {
         val response = areaService.createAreaSearchJob(
-            boardIdParam = boardId.toLong(),
+            boardId = boardId,
             participantId = principal.participantId,
             request = request,
         )
@@ -41,7 +41,7 @@ class AreaController(
         @CurrentParticipant principal: ParticipantPrincipal,
     ): ResponseEntity<GetAreaSearchJobResponse> {
         val response = areaService.getAreaSearchJob(
-            boardIdParam = boardId.toLong(),
+            boardId = boardId,
             participantId = principal.participantId,
             jobId = jobId,
         )

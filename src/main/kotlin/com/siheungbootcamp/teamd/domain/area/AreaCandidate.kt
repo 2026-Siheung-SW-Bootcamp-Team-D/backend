@@ -28,10 +28,10 @@ class AreaCandidate(
     val providerPlaceId: String?,
     @JsonValue
     @Column(name = "metrics", nullable = false, columnDefinition = "jsonb")
-    val metrics: JsonNode,
+    val metricsJson: String,
     @JsonValue
     @Column(name = "reasons", nullable = false, columnDefinition = "jsonb")
-    val reasons: JsonNode,
+    val reasonsJson: String,
     @Column(name = "rank", nullable = false)
     val rank: Int,
 ) {

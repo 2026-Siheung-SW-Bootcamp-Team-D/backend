@@ -41,13 +41,13 @@ class AreaService(
      * 5. 같은 보드의 활성 작업이 있으면 재사용
      * 6. snapshot에 participantIds만 저장
      */
-    fun createAreaSearchJob(boardIdParam: Long, participantId: Long, request: CreateAreaSearchJobRequest): CreateAreaSearchJobResponse {
-        val boardIdLong = boardIdParam
+    fun createAreaSearchJob(boardId: String, participantId: Long, request: CreateAreaSearchJobRequest): CreateAreaSearchJobResponse {
         // 1. 보드 존재 및 참여자 권한 확인
-        val board = boardRepository.findById(boardIdLong).orElse(null) ?: run {
-            logger.warn("area_search_board_not_found boardId=$boardIdLong")
+        val board = boardRepository.findByPublicId(boardId) ?: run {
+            logger.warn("area_search_board_not_found boardId=$boardId")
             throw BusinessException(ErrorCode.RESOURCE_NOT_FOUND)
         }
+        val boardIdLong = requireNotNull(board.id)
 
         val requester = participantRepository.findById(participantId).orElse(null) ?: run {
             logger.warn("area_search_requester_not_found participantId=$participantId")
@@ -99,7 +99,7 @@ class AreaService(
             publicId = jobId,
             boardId = boardIdLong,
             durationMin = request.durationMin,
-            snapshot = snapshot,
+            snapshotJson = mapper.writeValueAsString(snapshot),
         )
         areaJobRepository.save(job)
         logger.info("area_search_created jobId=$jobId boardId=$boardIdLong participantCount=${participantIds.size} durationMin=${request.durationMin}")
@@ -108,7 +108,8 @@ class AreaService(
     }
 
     private fun buildResponse(job: AreaSearchJob): CreateAreaSearchJobResponse {
-        val participantCount = job.snapshot.path("participantIds").size()
+        val snapshot = mapper.readTree(job.snapshotJson)
+        val participantCount = snapshot.path("participantIds").size()
         return CreateAreaSearchJobResponse(
             jobId = job.publicId,
             status = job.status,
@@ -124,8 +125,14 @@ class AreaService(
      * 작업 ID로 조회한다.
      */
     @Transactional(readOnly = true)
-    fun getAreaSearchJob(boardIdParam: Long, participantId: Long, jobId: String): GetAreaSearchJobResponse {
-        val boardIdLong = boardIdParam
+    fun getAreaSearchJob(boardId: String, participantId: Long, jobId: String): GetAreaSearchJobResponse {
+        // 보드 조회 및 내부 ID 해결
+        val board = boardRepository.findByPublicId(boardId) ?: run {
+            logger.warn("area_search_board_not_found boardId=$boardId")
+            throw BusinessException(ErrorCode.RESOURCE_NOT_FOUND)
+        }
+        val boardIdLong = requireNotNull(board.id)
+
         val job = areaJobRepository.findByPublicId(jobId) ?: run {
             logger.warn("area_search_job_not_found jobId=$jobId")
             throw BusinessException(ErrorCode.RESOURCE_NOT_FOUND)
@@ -155,8 +162,8 @@ class AreaService(
                         name = candidate.name,
                         lon = candidate.lon,
                         lat = candidate.lat,
-                        metrics = candidate.metrics,
-                        reasons = candidate.reasons,
+                        metrics = mapper.readTree(candidate.metricsJson),
+                        reasons = mapper.readTree(candidate.reasonsJson),
                         rank = candidate.rank,
                     )
                 },

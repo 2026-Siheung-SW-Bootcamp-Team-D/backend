@@ -100,8 +100,9 @@ class AreaJobExecutor(
      * Phase 1: ISOCHRONE - ODsay에서 각 참여자의 도달권 조회
      */
     private fun executeIsochronePhase(job: AreaSearchJob): List<Geometry> {
+        val snapshot = mapper.readTree(job.snapshotJson)
         val participantIds = mutableListOf<Long>()
-        for (node in job.snapshot.path("participantIds")) {
+        for (node in snapshot.path("participantIds")) {
             participantIds.add(node.asLong())
         }
         val geometries = mutableListOf<Geometry>()
@@ -198,8 +199,8 @@ class AreaJobExecutor(
                             lon = result.lon,
                             lat = result.lat,
                             providerPlaceId = result.providerPlaceId,
-                            metrics = metrics,
-                            reasons = reasons,
+                            metricsJson = mapper.writeValueAsString(metrics),
+                            reasonsJson = mapper.writeValueAsString(reasons),
                             rank = rank++,
                         )
                         candidates.add(candidate)
@@ -247,8 +248,8 @@ class AreaJobExecutor(
                         put("name", candidate.name)
                         put("lon", candidate.lon)
                         put("lat", candidate.lat)
-                        set("metrics", candidate.metrics)
-                        set("reasons", candidate.reasons)
+                        set("metrics", mapper.readTree(candidate.metricsJson))
+                        set("reasons", mapper.readTree(candidate.reasonsJson))
                         put("rank", candidate.rank)
                     }
                 )
