@@ -85,6 +85,95 @@ class PlaceService(
         )
     }
 
+    /**
+     * P7 Task 3: 주변 장소 검색
+     * 공통 영역 밖 좌표도 검색 가능하며 검색 결과는 place 테이블에 저장하지 않는다.
+     * q 또는 category 중 정확히 하나를 전달해야 한다.
+     */
+    fun searchNearby(
+        boardId: String,
+        principal: ParticipantPrincipal,
+        lon: Double,
+        lat: Double,
+        query: String?,
+        category: String?,
+        radius: Int,
+    ): PlaceCandidateResponse {
+        checks.requireBoard(principal, boardId)
+
+        // 검증: lon/lat은 이미 웹 계층에서 검증됨
+        if (lon < -180.0 || lon > 180.0 || lat < -90.0 || lat > 90.0) {
+            throw BusinessException(ErrorCode.INVALID_ARGUMENT)
+        }
+
+        // 검증: q와 category 동시 전달 불가
+        if (query != null && category != null) {
+            throw BusinessException(ErrorCode.INVALID_ARGUMENT)
+        }
+
+        // 검증: q와 category 모두 누락 불가
+        if (query.isNullOrBlank() && category.isNullOrBlank()) {
+            throw BusinessException(ErrorCode.INVALID_ARGUMENT)
+        }
+
+        // 검증: radius 범위
+        if (radius < 100 || radius > 5000) {
+            throw BusinessException(ErrorCode.INVALID_ARGUMENT)
+        }
+
+        val validCategories = setOf("RESTAURANT", "CAFE", "CULTURE", "TOUR", "ACCOMMODATION", "PLAY")
+        val trimmedQuery = query?.trim()
+
+        // 검증: category 값
+        if (!category.isNullOrBlank()) {
+            if (category !in validCategories) {
+                throw BusinessException(ErrorCode.INVALID_ARGUMENT)
+            }
+        }
+
+        // 검증: q 길이 (2자 이상)
+        if (!trimmedQuery.isNullOrEmpty() && trimmedQuery.length < 2) {
+            throw BusinessException(ErrorCode.INVALID_ARGUMENT)
+        }
+
+        val candidates = if (!category.isNullOrBlank()) {
+            val kakaoGroupCode = when (category) {
+                "RESTAURANT" -> "FD6"
+                "CAFE" -> "CE7"
+                "CULTURE" -> "CT1"
+                "TOUR" -> "AT4"
+                "ACCOMMODATION" -> "AD5"
+                "PLAY" -> "카페" // PLAY는 keyword 검색 사용
+                else -> throw BusinessException(ErrorCode.INVALID_ARGUMENT)
+            }
+
+            if (category == "PLAY") {
+                kakao.searchKeyword("놀이터", lon, lat, radius, 15)
+            } else {
+                kakao.searchCategory(kakaoGroupCode, lon, lat, radius, 15)
+            }
+        } else {
+            kakao.searchKeyword(trimmedQuery!!, lon, lat, radius, 15)
+        }
+
+        return PlaceCandidateResponse(
+            items = candidates.map { c ->
+                PlaceCandidateResponse.CandidateItem(
+                    providerPlaceId = c.providerPlaceId,
+                    name = c.name,
+                    category = c.category,
+                    internalCategory = c.internalCategory,
+                    addressName = c.addressName,
+                    roadAddressName = c.roadAddressName,
+                    location = LocationResponse(c.lon, c.lat),
+                    sourceUrl = c.providerPlaceUrl,
+                    distanceMeters = c.distanceMeters,
+                )
+            },
+            hint = if (candidates.isEmpty()) "결과가 없습니다." else null,
+        )
+    }
+
     @Transactional
     fun create(boardId: String, principal: ParticipantPrincipal, request: CreatePlaceRequest): PlaceResponse {
         checks.requireBoard(principal, boardId)

@@ -70,6 +70,23 @@ class PlaceController(private val service: PlaceService) {
         @Parameter(hidden = true) @CurrentParticipant principal: ParticipantPrincipal,
     ) = service.coord2Address(boardId, principal, lon, lat)
 
+    @GetMapping("/boards/{boardId}/search/nearby-places")
+    @Operation(summary = "주변 장소 검색", description = "자유 좌표에서 주변 장소를 검색합니다. q 또는 category 중 정확히 하나를 전달해야 합니다.")
+    @SecurityRequirement(name = "participantToken")
+    @ApiResponse(responseCode = "200", description = "검색 성공, 결과 없을 수 있음")
+    @ApiResponse(responseCode = "400", description = "입력 검증 오류 (좌표 누락, 둘 다 누락/동시 전달 등)")
+    @ApiResponse(responseCode = "404", description = "다른 보드의 토큰(존재 숨김)")
+    @RateLimit(permits = 20, windowSeconds = 60, key = RateLimitKey.PARTICIPANT, scope = RateLimitScope.PARTICIPANT_GLOBAL)
+    fun searchNearbyPlaces(
+        @PathVariable boardId: String,
+        @RequestParam(required = true) lon: Double,
+        @RequestParam(required = true) lat: Double,
+        @RequestParam(required = false, name = "q") query: String?,
+        @RequestParam(required = false) category: String?,
+        @RequestParam(defaultValue = "1000") radius: Int,
+        @Parameter(hidden = true) @CurrentParticipant principal: ParticipantPrincipal,
+    ) = service.searchNearby(boardId, principal, lon, lat, query, category, radius)
+
     // 장소 관리 엔드포인트 (12-15)
 
     @PostMapping("/boards/{boardId}/places")

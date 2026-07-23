@@ -51,8 +51,8 @@ class KakaoLocalClient(
         val addressName: String?,
     )
 
-    fun searchKeyword(query: String, lon: Double? = null, lat: Double? = null, radius: Int? = null): List<PlaceCandidate> {
-        val params = mutableListOf("query=${urlEncode(query)}", "size=5")
+    fun searchKeyword(query: String, lon: Double? = null, lat: Double? = null, radius: Int? = null, size: Int = 15): List<PlaceCandidate> {
+        val params = mutableListOf("query=${urlEncode(query)}", "size=${size.coerceIn(1, 15)}")
         if (lon != null && lat != null) {
             params.add("x=$lon")
             params.add("y=$lat")
@@ -79,7 +79,49 @@ class KakaoLocalClient(
                     providerPlaceUrl = validateUrl(doc.path("place_url").asText()),
                     distanceMeters = if (doc.has("distance")) doc.path("distance").asInt() else null,
                 )
-            }.take(5).toList()
+            }.take(size.coerceIn(1, 15)).toList()
+        } catch (e: Exception) {
+            throw BusinessException(ErrorCode.EXTERNAL_BAD_RESPONSE)
+        }
+    }
+
+    /**
+     * 카테고리별 주변 검색을 수행한다.
+     * canonical category를 Kakao group code로 변환하여 검색한다.
+     * - RESTAURANT → FD6
+     * - CAFE → CE7
+     * - CULTURE → CT1
+     * - TOUR → AT4
+     * - ACCOMMODATION → AD5
+     */
+    fun searchCategory(categoryGroupCode: String, lon: Double, lat: Double, radius: Int, size: Int = 15): List<PlaceCandidate> {
+        val params = listOf(
+            "category_group_code=$categoryGroupCode",
+            "x=$lon",
+            "y=$lat",
+            "radius=$radius",
+            "size=${size.coerceIn(1, 15)}"
+        )
+
+        val url = "${properties.baseUrl}/v2/local/search/category.json?${params.joinToString("&")}"
+        val response = externalApiClient.get(url, authHeaders())
+
+        return try {
+            val root = mapper.readTree(response)
+            root.path("documents").iterator().asSequence().map { doc ->
+                PlaceCandidate(
+                    providerPlaceId = doc.path("id").asText(),
+                    name = doc.path("place_name").asText(),
+                    category = doc.path("category_name").asText(),
+                    internalCategory = KakaoCategoryMapper.map(doc.path("category_name").asText()),
+                    addressName = doc.path("address_name").asText(),
+                    roadAddressName = doc.path("road_address_name").asText(),
+                    lon = doc.path("x").asDouble(),
+                    lat = doc.path("y").asDouble(),
+                    providerPlaceUrl = validateUrl(doc.path("place_url").asText()),
+                    distanceMeters = if (doc.has("distance")) doc.path("distance").asInt() else null,
+                )
+            }.take(size.coerceIn(1, 15)).toList()
         } catch (e: Exception) {
             throw BusinessException(ErrorCode.EXTERNAL_BAD_RESPONSE)
         }
