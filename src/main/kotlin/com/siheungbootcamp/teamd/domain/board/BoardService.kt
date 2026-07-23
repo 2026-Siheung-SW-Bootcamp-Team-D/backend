@@ -144,18 +144,10 @@ class BoardService(
 
     private fun toResponseWithSelection(b: Board): BoardResponse {
         val selectedPlacePublicId = b.selectedPlaceId?.let { id ->
-            try {
-                jdbc.sql("select public_id from place where id = :id").param("id", id).query(String::class.java).single()
-            } catch (e: Exception) {
-                null
-            }
+            jdbc.sql("select public_id from place where id = :id").param("id", id).query(String::class.java).single()
         }
         val selectedByParticipantPublicId = b.selectedByParticipantId?.let { id ->
-            try {
-                jdbc.sql("select public_id from participant where id = :id").param("id", id).query(String::class.java).single()
-            } catch (e: Exception) {
-                null
-            }
+            jdbc.sql("select public_id from participant where id = :id").param("id", id).query(String::class.java).single()
         }
         return BoardResponse(b.publicId, b.name, range(b), b.purpose, b.status, counts = counts(b), updatedAt = b.updatedAt,
             selectedPlaceId = selectedPlacePublicId,
