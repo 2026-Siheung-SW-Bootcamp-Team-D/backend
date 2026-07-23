@@ -49,6 +49,30 @@ interface PlaceLikeRepository : JpaRepository<PlaceLike, PlaceLikeId> {
     fun deleteByPlaceIdAndParticipantId(@Param("placeId") placeId: Long, @Param("participantId") participantId: Long): Long
 
     /**
+     * 멱등적 좋아요 추가: INSERT ... ON CONFLICT DO NOTHING 사용
+     *
+     * 동시성 경쟁(race condition) 없이 멱등적이다.
+     * 이미 좋아요되어 있으면 무시하고, 없으면 생성한다.
+     * 고유 제약 위반으로 인한 예외를 발생시키지 않는다.
+     *
+     * @param placeId 장소 ID
+     * @param participantId 참여자 ID
+     */
+    @Modifying
+    @Query(
+        nativeQuery = true,
+        value = """
+            INSERT INTO place_like (place_id, participant_id, created_at)
+            VALUES (:placeId, :participantId, CURRENT_TIMESTAMP)
+            ON CONFLICT (place_id, participant_id) DO NOTHING
+        """
+    )
+    fun insertOrIgnore(
+        @Param("placeId") placeId: Long,
+        @Param("participantId") participantId: Long
+    )
+
+    /**
      * N+1 방지: 한 번의 쿼리로 여러 장소의 좋아요 수를 집계한다.
      * 결과는 [placeId, count] 튜플 배열로 반환된다.
      */

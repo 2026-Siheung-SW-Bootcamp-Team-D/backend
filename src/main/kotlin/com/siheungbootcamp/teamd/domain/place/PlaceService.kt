@@ -304,11 +304,9 @@ class PlaceService(
             ?: throw BusinessException(ErrorCode.RESOURCE_NOT_FOUND)
         val placeId_internal = place.id ?: throw BusinessException(ErrorCode.INTERNAL_ERROR)
 
-        // 멱등성: 이미 좋아요되어 있으면 무시하고 성공 반환
-        if (!likes.existsByPlaceIdAndParticipantId(placeId_internal, principal.participantId)) {
-            val like = PlaceLike(PlaceLikeId(placeId_internal, principal.participantId))
-            likes.save(like)
-        }
+        // 멱등성: INSERT ... ON CONFLICT DO NOTHING으로 동시성 경쟁(race condition) 없이 처리
+        // 이미 좋아요되어 있으면 무시하고, 없으면 생성한다.
+        likes.insertOrIgnore(placeId_internal, principal.participantId)
     }
 
     @Transactional
