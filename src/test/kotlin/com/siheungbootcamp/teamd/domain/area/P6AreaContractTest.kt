@@ -13,6 +13,7 @@ import org.springframework.test.context.DynamicPropertyRegistry
 import org.springframework.test.context.DynamicPropertySource
 import org.springframework.test.web.servlet.MockMvc
 import org.springframework.test.web.servlet.get
+import org.springframework.test.web.servlet.patch
 import org.springframework.test.web.servlet.post
 import org.testcontainers.junit.jupiter.Container
 import org.testcontainers.junit.jupiter.Testcontainers
@@ -69,35 +70,33 @@ class P6AreaContractTest(
     private fun createBoard(name: String, hostNickname: String): BoardTokenPair {
         val res = mockMvc.post("/api/v1/boards") {
             contentType = MediaType.APPLICATION_JSON
-            content = """{"name":"$name","dateStart":"2026-07-26","dateEnd":"2026-07-27"}"""
+            content = """{"name":"$name","dateRange":{"start":"2099-01-01","end":"2099-01-02"},"purpose":"test","hostNickname":"$hostNickname"}"""
         }.andReturn().response
         val boardData = objectMapper.readTree(res.contentAsString)
-        val boardId = boardData.path("boardId").asText()
-        val token = boardData.path("token").asText()
+        val boardId = boardData.path("board").path("boardId").asText()
+        val token = boardData.path("participant").path("participantToken").asText()
         return BoardTokenPair(boardId, token)
     }
 
     private fun inviteAndJoin(host: BoardTokenPair, nickname: String): BoardTokenPair {
-        val inviteRes = mockMvc.post("/api/v1/boards/${host.boardId}/invitations") {
+        val inviteRes = mockMvc.get("/api/v1/boards/${host.boardId}/invitation") {
             bearer(host.token)
-            contentType = MediaType.APPLICATION_JSON
-            content = """{"role":"MEMBER"}"""
         }.andReturn().response
         val inviteCode = objectMapper.readTree(inviteRes.contentAsString).path("inviteCode").asText()
 
-        val joinRes = mockMvc.post("/api/v1/boards/join") {
+        val joinRes = mockMvc.post("/api/v1/invitations/$inviteCode/participants") {
             contentType = MediaType.APPLICATION_JSON
-            content = """{"inviteCode":"$inviteCode","nickname":"$nickname"}"""
+            content = """{"nickname":"$nickname"}"""
         }.andReturn().response
-        val token = objectMapper.readTree(joinRes.contentAsString).path("token").asText()
+        val token = objectMapper.readTree(joinRes.contentAsString).path("participantToken").asText()
         return BoardTokenPair(host.boardId, token)
     }
 
     private fun setOrigin(participant: BoardTokenPair, label: String, lon: Double, lat: Double) {
-        mockMvc.post("/api/v1/boards/${participant.boardId}/participants/me/origin") {
+        mockMvc.patch("/api/v1/boards/${participant.boardId}/participants/me") {
             bearer(participant.token)
             contentType = MediaType.APPLICATION_JSON
-            content = """{"label":"$label","lon":$lon,"lat":$lat}"""
+            content = """{"origin":{"label":"$label","lon":$lon,"lat":$lat,"source":"MANUAL_PIN"}}"""
         }.andExpect { status { isOk() } }
     }
 
