@@ -125,7 +125,6 @@ class DepartureJobExecutor(
                     startLat = originLat,
                     endLon = destLon,
                     endLat = destLat,
-                    arrivalAt = destScheduledAt,
                 )
 
                 if (summary == null) {

@@ -20,7 +20,7 @@ class TmapStubServer(port: Int = 0) : AutoCloseable {
     private val requestCount = AtomicInteger(0)
 
     init {
-        server.createContext("/tmap/routes/recognition") { exchange ->
+        server.createContext("/transit/routes/sub") { exchange ->
             handleTransitSearch(exchange)
         }
         server.setExecutor(null)
@@ -44,20 +44,29 @@ class TmapStubServer(port: Int = 0) : AutoCloseable {
 
         when (responseMode) {
             ResponseMode.SUCCESS -> {
+                // 2026-07-20 실제 키로 검증한 응답 모양(docs/api-validation/results/4_tmap_요약정보_*.json)과
+                // 같은 구조를 쓴다. totalTime/totalWalkTime은 이미 초 단위다.
                 val response = """
                 {
-                  "summary": {
-                    "totalTime": 1920000,
-                    "transferCount": 1,
-                    "totalFare": 1550,
-                    "totalWalkTime": 420000
+                  "metaData": {
+                    "plan": {
+                      "itineraries": [
+                        {
+                          "fare": { "regular": { "totalFare": 1550 } },
+                          "totalTime": 1920,
+                          "totalWalkTime": 420,
+                          "pathType": 1,
+                          "transferCount": 1
+                        }
+                      ]
+                    }
                   }
                 }
                 """.trimIndent()
                 sendResponse(exchange, 200, response)
             }
             ResponseMode.NO_ROUTE -> {
-                sendResponse(exchange, 200, """{"summary":{}}""")
+                sendResponse(exchange, 200, """{"metaData":{"plan":{"itineraries":[]}}}""")
             }
             ResponseMode.SERVER_ERROR -> {
                 sendResponse(exchange, 500, """{"error":"server_error"}""")
