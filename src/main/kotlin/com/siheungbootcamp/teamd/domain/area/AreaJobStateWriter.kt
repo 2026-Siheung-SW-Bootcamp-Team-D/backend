@@ -21,7 +21,7 @@ import java.time.Instant
 @Component
 class AreaJobStateWriter(
     private val jobRepository: AreaSearchJobRepository,
-    private val candidateRepository: AreaCandidateRepository,
+    private val candidateRepository: AreaSuggestionRepository,
     private val mapper: ObjectMapper,
 ) {
     private val logger = LoggerFactory.getLogger(javaClass)
@@ -56,7 +56,7 @@ class AreaJobStateWriter(
      * 작업을 성공 상태로 표시하고 후보들을 저장한다.
      */
     @Transactional
-    fun markSucceeded(job: AreaSearchJob, candidates: List<AreaCandidate>) {
+    fun markSucceeded(job: AreaSearchJob, candidates: List<AreaSuggestion>) {
         // 후보 저장
         candidates.forEach { candidateRepository.save(it) }
 

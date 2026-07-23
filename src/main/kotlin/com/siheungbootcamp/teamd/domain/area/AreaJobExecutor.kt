@@ -40,7 +40,7 @@ import java.util.*
 @Component
 class AreaJobExecutor(
     private val jobRepository: AreaSearchJobRepository,
-    private val candidateRepository: AreaCandidateRepository,
+    private val candidateRepository: AreaSuggestionRepository,
     private val participantRepository: ParticipantRepository,
     private val geometryService: GeometryService,
     private val odsayClient: OdsayIsochroneClient,
@@ -186,9 +186,9 @@ class AreaJobExecutor(
      *
      * Kakao Local 호출 횟수: 각 조각(최대 3개)당 1개 키워드만 검색 → 최대 3회 (MAX_KAKAO_CALLS 상수와 일치)
      */
-    private fun executeAnchorPhase(job: AreaSearchJob, pieces: List<Geometry>): List<AreaCandidate> {
+    private fun executeAnchorPhase(job: AreaSearchJob, pieces: List<Geometry>): List<AreaSuggestion> {
         val jobId = job.id ?: error("job must have id")
-        val candidates = mutableListOf<AreaCandidate>()
+        val candidates = mutableListOf<AreaSuggestion>()
         val seenPlaceIds = mutableSetOf<String>()
         val maxCandidates = 3
 
@@ -219,7 +219,7 @@ class AreaJobExecutor(
                     }
                     val reasons = mapper.createArrayNode().add("공통 도달 영역 안의 탐색 기준점")
 
-                    val candidate = AreaCandidate(
+                    val candidate = AreaSuggestion(
                         publicId = "candidate_${UUID.randomUUID()}",
                         jobId = jobId,
                         name = result.name,
@@ -240,7 +240,7 @@ class AreaJobExecutor(
 
         // 결정적인 정렬: 기준점 면적(큰순), 그다음 이름 사전순, providerPlaceId로 완전한 결정성 보장
         val sortedCandidates = candidates
-            .sortedWith(compareBy<AreaCandidate> { candidate ->
+            .sortedWith(compareBy<AreaSuggestion> { candidate ->
                 val metrics = mapper.readTree(candidate.metricsJson)
                 -metrics.path("intersectionAreaKm2").asDouble() // 음수로 내림차순
             }.thenBy { it.name }
@@ -248,7 +248,7 @@ class AreaJobExecutor(
             .take(maxCandidates) // 최대 3개만 유지
             .mapIndexed { index, candidate ->
                 // rank를 1부터 시작하도록 새로운 객체로 생성
-                AreaCandidate(
+                AreaSuggestion(
                     publicId = candidate.publicId,
                     jobId = candidate.jobId,
                     name = candidate.name,
