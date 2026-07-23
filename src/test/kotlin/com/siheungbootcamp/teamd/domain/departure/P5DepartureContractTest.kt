@@ -37,6 +37,7 @@ import kotlin.test.assertTrue
     "app.board.frontend-base-url=https://example.app",
     "app.tmap.app-key=test-tmap-key",
     "app.job.enabled=false",
+    "app.legacy-api-enabled=true",
 ])
 class P5DepartureContractTest(
     @Autowired private val mockMvc: MockMvc,

@@ -38,6 +38,7 @@ import kotlin.test.assertTrue
     "app.crypto.origin-key=AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=",
     "app.board.frontend-base-url=https://example.app",
     "app.kakao.rest-key=test-kakao-key",
+    "app.legacy-api-enabled=true",
 ])
 class P4CourseContractTest(
     @Autowired private val mockMvc: MockMvc,
