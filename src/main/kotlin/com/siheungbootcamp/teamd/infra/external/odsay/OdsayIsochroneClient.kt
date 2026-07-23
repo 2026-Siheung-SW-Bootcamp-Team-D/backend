@@ -70,7 +70,7 @@ class OdsayIsochroneClient(
                 throw BusinessException(ErrorCode.EXTERNAL_BAD_RESPONSE)
             }
 
-            logger.info("odsay_isochrone_fetch lon=$lon lat=$lat durationMin=$durationMin")
+            logger.info("odsay_isochrone_fetch durationMin=$durationMin")
             jtsGeometry
         } catch (e: BusinessException) {
             throw e
