@@ -109,9 +109,9 @@ class DepartureController(
             )
         } else {
             // 계산 중 (202)
-            val uri = ServletUriComponentsBuilder.fromCurrentRequest()
-                .path("/../departure-guide")
-                .build()
+            val uri = ServletUriComponentsBuilder.fromCurrentContextPath()
+                .path("/api/v1/boards/{boardId}/participants/me/departure-guide")
+                .buildAndExpand(boardId)
                 .toUri()
 
             ResponseEntity
