@@ -45,6 +45,16 @@ class AreaJobExecutor(
     private val maxRetries = 3
     private val keywords = listOf("역", "맛집", "카페")
 
+    companion object {
+        /**
+         * Kakao Local API 호출 최대 횟수.
+         * executeAnchorPhase에서 각 조각당 1개 키워드만 검색하므로,
+         * 상위 3개 조각 × 1 키워드 = 최대 3회 호출.
+         * AreaService의 estimatedExternalCalls.kakaoLocal과 일치해야 함.
+         */
+        const val MAX_KAKAO_CALLS = 3
+    }
+
     override fun processOne(): Boolean {
         val job = loadNextJob() ?: return false
         logger.info("area_job_processing jobId=${job.publicId}")
@@ -161,60 +171,90 @@ class AreaJobExecutor(
 
     /**
      * Phase 3: AREA_ANCHOR_COLLECTION - 각 조각 주변에서 Kakao Local 검색
+     *
+     * 최대 3개의 후보를 반환한다. 중복 제거 후 기준점 면적(큰순) 및 이름으로 정렬하여 결정적인 순서를 보장한다.
+     * rank는 1부터 시작한다.
+     *
+     * Kakao Local 호출 횟수: 각 조각(최대 3개)당 1개 키워드만 검색 → 최대 3회 (MAX_KAKAO_CALLS 상수와 일치)
      */
     private fun executeAnchorPhase(job: AreaSearchJob, pieces: List<Geometry>): List<AreaCandidate> {
         val jobId = job.id ?: error("job must have id")
         val candidates = mutableListOf<AreaCandidate>()
         val seenPlaceIds = mutableSetOf<String>()
-        var rank = 0
+        val maxCandidates = 3
 
         for ((pieceIndex, piece) in pieces.withIndex()) {
             val centroid = piece.centroid
             val centerLon = centroid.coordinate.x
             val centerLat = centroid.coordinate.y
 
-            for (keyword in keywords) {
-                try {
-                    val searchResults = kakaoClient.searchKeyword(keyword, centerLon, centerLat, radius = 2000)
+            // 각 조각당 1개 키워드만 검색 (공통 도달 영역 내 기준점 찾기)
+            // 첫 번째 키워드("역")를 사용하여 주요 교통 허브 탐색
+            val keyword = keywords[0]
+            try {
+                val searchResults = kakaoClient.searchKeyword(keyword, centerLon, centerLat, radius = 2000)
 
-                    for (result in searchResults) {
-                        // 중복 제거
-                        if (seenPlaceIds.contains(result.providerPlaceId)) continue
+                for (result in searchResults) {
+                    // 중복 제거
+                    if (seenPlaceIds.contains(result.providerPlaceId)) continue
 
-                        // 조각 내부 필터링
-                        if (!geometryService.contains(piece, result.lon, result.lat)) continue
+                    // 조각 내부 필터링
+                    if (!geometryService.contains(piece, result.lon, result.lat)) continue
 
-                        // 후보 추가
-                        seenPlaceIds.add(result.providerPlaceId)
-                        val metrics = (mapper.createObjectNode() as ObjectNode).apply {
-                            put("pieceIndex", pieceIndex)
-                            put("intersectionAreaKm2", piece.area)
-                        }
-                        val reasons = mapper.createArrayNode().add("공통 도달 영역 안의 탐색 기준점")
-
-                        val candidate = AreaCandidate(
-                            publicId = "candidate_${UUID.randomUUID()}",
-                            jobId = jobId,
-                            name = result.name,
-                            lon = result.lon,
-                            lat = result.lat,
-                            providerPlaceId = result.providerPlaceId,
-                            metricsJson = mapper.writeValueAsString(metrics),
-                            reasonsJson = mapper.writeValueAsString(reasons),
-                            rank = rank++,
-                        )
-                        candidates.add(candidate)
+                    // 후보 추가
+                    seenPlaceIds.add(result.providerPlaceId)
+                    val intersectionAreaKm2 = geometryService.intersectionAreaKm2(piece)
+                    val metrics = (mapper.createObjectNode() as ObjectNode).apply {
+                        put("pieceIndex", pieceIndex)
+                        put("intersectionAreaKm2", intersectionAreaKm2)
                     }
-                } catch (e: Exception) {
-                    logger.warn("area_anchor_search_error jobId=${job.publicId} keyword=$keyword pieceIndex=$pieceIndex error=${e.message}")
-                    throw BusinessException(ErrorCode.EXTERNAL_UNAVAILABLE)
+                    val reasons = mapper.createArrayNode().add("공통 도달 영역 안의 탐색 기준점")
+
+                    val candidate = AreaCandidate(
+                        publicId = "candidate_${UUID.randomUUID()}",
+                        jobId = jobId,
+                        name = result.name,
+                        lon = result.lon,
+                        lat = result.lat,
+                        providerPlaceId = result.providerPlaceId,
+                        metricsJson = mapper.writeValueAsString(metrics),
+                        reasonsJson = mapper.writeValueAsString(reasons),
+                        rank = 0, // 임시값, 정렬 후 재할당
+                    )
+                    candidates.add(candidate)
                 }
+            } catch (e: Exception) {
+                logger.warn("area_anchor_search_error jobId=${job.publicId} keyword=$keyword pieceIndex=$pieceIndex error=${e.message}")
+                throw BusinessException(ErrorCode.EXTERNAL_UNAVAILABLE)
             }
         }
 
-        logger.info("area_anchor_success jobId=${job.publicId} candidateCount=${candidates.size}")
-        updateProgress(job, "AREA_ANCHOR_COLLECTION", "found ${candidates.size} candidates")
-        return candidates
+        // 결정적인 정렬: 기준점 면적(큰순), 그다음 이름 사전순, providerPlaceId로 완전한 결정성 보장
+        val sortedCandidates = candidates
+            .sortedWith(compareBy<AreaCandidate> { candidate ->
+                val metrics = mapper.readTree(candidate.metricsJson)
+                -metrics.path("intersectionAreaKm2").asDouble() // 음수로 내림차순
+            }.thenBy { it.name }
+            .thenBy { it.providerPlaceId })
+            .take(maxCandidates) // 최대 3개만 유지
+            .mapIndexed { index, candidate ->
+                // rank를 1부터 시작하도록 새로운 객체로 생성
+                AreaCandidate(
+                    publicId = candidate.publicId,
+                    jobId = candidate.jobId,
+                    name = candidate.name,
+                    lon = candidate.lon,
+                    lat = candidate.lat,
+                    providerPlaceId = candidate.providerPlaceId,
+                    metricsJson = candidate.metricsJson,
+                    reasonsJson = candidate.reasonsJson,
+                    rank = index + 1,
+                )
+            }
+
+        logger.info("area_anchor_success jobId=${job.publicId} candidateCount=${sortedCandidates.size}")
+        updateProgress(job, "AREA_ANCHOR_COLLECTION", "found ${sortedCandidates.size} candidates")
+        return sortedCandidates
     }
 
     @Transactional

@@ -1,15 +1,22 @@
 package com.siheungbootcamp.teamd.domain.area
 
+import org.locationtech.jts.geom.Coordinate
 import org.locationtech.jts.geom.Geometry
 import org.locationtech.jts.geom.GeometryFactory
 import org.locationtech.jts.geom.Polygon
 import org.springframework.stereotype.Service
+import kotlin.math.atan2
+import kotlin.math.tan
+import kotlin.math.sin
+import kotlin.math.cos
+import kotlin.math.PI
 
 /**
  * JTS를 사용하여 교집합, 포함 관계 등의 기하학 연산을 수행한다.
  *
  * - intersectLargest: 여러 폴리곤의 교집합 결과에서 면적이 큰 조각부터 최대 limit개까지 반환
  * - contains: 주어진 좌표가 폴리곤에 포함되는지 판정
+ * - intersectionAreaKm2: 폴리곤의 실제 제곱 킬로미터 면적을 반환 (구면 면적 공식 사용)
  *
  * 입력 폴리곤은 자동으로 정규화되며(buffer(0)),
  * 교집합 결과는 면적 내림차순으로 정렬되어 반환된다.
@@ -17,6 +24,11 @@ import org.springframework.stereotype.Service
 @Service
 class GeometryService {
     private val geometryFactory = GeometryFactory()
+
+    companion object {
+        // 지구 반지름 (km)
+        private const val EARTH_RADIUS_KM = 6371.0
+    }
 
     /**
      * 여러 개의 폴리곤을 순차적으로 교집합하고, 결과에서 면적이 큰 조각 최대 limit개를 반환한다.
@@ -59,8 +71,55 @@ class GeometryService {
      * @return 포함 여부
      */
     fun contains(area: Geometry, lon: Double, lat: Double): Boolean {
-        val point = geometryFactory.createPoint(org.locationtech.jts.geom.Coordinate(lon, lat))
+        val point = geometryFactory.createPoint(Coordinate(lon, lat))
         return area.contains(point)
+    }
+
+    /**
+     * 폴리곤의 실제 제곱 킬로미터 면적을 계산한다.
+     *
+     * WGS84 좌표(degree²)를 실제 km²로 변환한다.
+     * 좌표가 Shoelace 공식으로 계산한 도(degree)² 면적에서,
+     * 위도에 따른 스케일 팩터를 적용하여 km²로 변환한다.
+     *
+     * 1 도(latitude) ≈ 111.32 km
+     * 1 도(longitude at latitude φ) ≈ 111.32 * cos(φ) km
+     *
+     * @param geometry 면적을 계산할 폴리곤
+     * @return 제곱 킬로미터 단위의 면적. 폴리곤이 비어있으면 0.0
+     */
+    fun intersectionAreaKm2(geometry: Geometry): Double {
+        if (geometry.isEmpty) return 0.0
+
+        // 폴리곤의 외부 고리 좌표 추출
+        val coordinates = when {
+            geometry is Polygon -> geometry.exteriorRing.coordinates
+            else -> return 0.0
+        }
+
+        if (coordinates.size < 4) return 0.0 // 최소 3개의 고유한 점 필요 + 마지막 폐곡점
+
+        // 다각형의 bounding box를 이용하여 평균 위도에서의 스케일 팩터 계산
+        val latitudes = coordinates.map { it.y }
+        val averageLat = latitudes.average() * PI / 180.0
+
+        // 1도 = km 변환 상수
+        val degreeToKmLat = 111.32
+        val degreeToKmLon = 111.32 * cos(averageLat)
+
+        // Shoelace 공식으로 도(degree) 단위 면적 계산
+        var areaInDegrees = 0.0
+        for (i in 0 until coordinates.size - 1) {
+            val current = coordinates[i]
+            val next = coordinates[i + 1]
+            areaInDegrees += (next.x - current.x) * (next.y + current.y) / 2.0
+        }
+        areaInDegrees = kotlin.math.abs(areaInDegrees)
+
+        // km²로 변환
+        val areaKm2 = areaInDegrees * degreeToKmLat * degreeToKmLon
+
+        return if (areaKm2 > 0.0) areaKm2 else 0.0
     }
 
     private fun normalize(geometry: Geometry): Geometry {
