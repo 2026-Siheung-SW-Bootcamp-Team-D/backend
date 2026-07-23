@@ -72,10 +72,19 @@ class AreaService(
             throw BusinessException(ErrorCode.INVALID_ARGUMENT)
         }
 
-        // 4. 모든 참여자의 출발지 확인
-        val withOrigin = activeParticipants.filter { it.originCiphertext != null }
-        if (withOrigin.size != activeParticipants.size) {
-            logger.warn("area_search_missing_origin boardId=$boardIdLong missing=${activeParticipants.size - withOrigin.size}")
+        // 3-1. 참여자 행을 ID 순서대로 잠금 (origin 변경과의 동시성 race 방지)
+        // 동일한 잠금 순서를 보장하기 위해 ID 오름차순으로 정렬해서 잠금
+        val lockedParticipants = activeParticipants
+            .sortedBy { it.id ?: error("participant must have id") }
+            .map { participant ->
+                participantRepository.findByIdForUpdate(participant.id ?: error("participant must have id"))
+                    ?: error("participant should exist after sort")
+            }
+
+        // 4. 모든 참여자의 출발지 확인 (잠금 후)
+        val withOrigin = lockedParticipants.filter { it.originCiphertext != null }
+        if (withOrigin.size != lockedParticipants.size) {
+            logger.warn("area_search_missing_origin boardId=$boardIdLong missing=${lockedParticipants.size - withOrigin.size}")
             throw BusinessException(ErrorCode.ORIGIN_REQUIRED)
         }
 
