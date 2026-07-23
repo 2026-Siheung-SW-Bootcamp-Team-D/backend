@@ -5,6 +5,28 @@ import jakarta.validation.constraints.DecimalMin
 import jakarta.validation.constraints.Size
 import java.time.Instant
 
+// Canonical value objects
+
+/**
+ * 지도 좌표: 경도(lon)와 위도(lat)를 포함합니다.
+ * WGS84 표준을 사용하며, lon은 경도, lat은 위도입니다.
+ */
+data class LocationResponse(
+    val lon: Double,
+    val lat: Double,
+)
+
+/**
+ * 외부 API 공급자 정보: sourceProvider가 제공한 장소 정보를 정규화합니다.
+ * 이 정보는 사용자가 검색 결과를 확인하거나 원본을 탐색할 때 사용됩니다.
+ */
+data class PlaceSourceResponse(
+    val sourceProvider: String,
+    val providerPlaceId: String?,
+    val sourceUrl: String?,
+    val inputMethod: String,
+)
+
 // Request DTOs
 
 data class CreatePlaceRequest(
@@ -54,11 +76,18 @@ data class PlaceListResponse(
     )
 }
 
+/**
+ * P7 canonical 검색 결과: 공급자 중립 형식입니다.
+ * 장소 후보, 주소, 주변 검색 결과를 통일된 구조로 반환합니다.
+ */
 data class PlaceCandidateResponse(
-    val provider: String,
     val items: List<CandidateItem>,
     val hint: String? = null,
 ) {
+    /**
+     * Canonical 장소 후보 아이템
+     * location과 sourceUrl은 공급자 독립적으로 정규화됩니다.
+     */
     data class CandidateItem(
         val providerPlaceId: String,
         val name: String,
@@ -66,9 +95,8 @@ data class PlaceCandidateResponse(
         val internalCategory: String,
         val addressName: String,
         val roadAddressName: String,
-        val lon: Double,
-        val lat: Double,
-        val providerPlaceUrl: String?,
+        val location: LocationResponse,
+        val sourceUrl: String?,
         val distanceMeters: Int?,
     )
 }
@@ -80,8 +108,7 @@ data class AddressCandidateResponse(
         val addressName: String,
         val roadAddressName: String?,
         val addressType: String,
-        val lon: Double,
-        val lat: Double,
+        val location: LocationResponse,
     )
 }
 

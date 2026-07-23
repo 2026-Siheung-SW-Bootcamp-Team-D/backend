@@ -40,7 +40,6 @@ class PlaceService(
 
         val candidates = kakao.searchKeyword(query, lon, lat, radius)
         return PlaceCandidateResponse(
-            provider = "KAKAO",
             items = candidates.map { c ->
                 PlaceCandidateResponse.CandidateItem(
                     providerPlaceId = c.providerPlaceId,
@@ -49,9 +48,8 @@ class PlaceService(
                     internalCategory = c.internalCategory,
                     addressName = c.addressName,
                     roadAddressName = c.roadAddressName,
-                    lon = c.lon,
-                    lat = c.lat,
-                    providerPlaceUrl = c.providerPlaceUrl,
+                    location = LocationResponse(c.lon, c.lat),
+                    sourceUrl = c.providerPlaceUrl,
                     distanceMeters = c.distanceMeters,
                 )
             },
@@ -70,8 +68,7 @@ class PlaceService(
                     addressName = c.addressName,
                     roadAddressName = c.roadAddressName,
                     addressType = c.addressType,
-                    lon = c.lon,
-                    lat = c.lat,
+                    location = LocationResponse(c.lon, c.lat),
                 )
             },
         )

@@ -27,43 +27,43 @@ import java.net.URI
 @Tag(name = "P2 장소·검색", description = "장소를 검색하고 등록·조회·삭제합니다.")
 class PlaceController(private val service: PlaceService) {
 
-    // 검색 엔드포인트 (9-11)
+    // 검색 엔드포인트 (9-11, P7 canonical paths)
 
-    @GetMapping("/boards/{boardId}/place-candidates")
-    @Operation(summary = "장소 후보 검색", description = "Kakao Local 키워드 검색으로 최대 5개 후보를 반환합니다.")
+    @GetMapping("/boards/{boardId}/search/places")
+    @Operation(summary = "장소 검색", description = "Kakao Local 키워드 검색으로 최대 15개 결과를 반환합니다.")
     @SecurityRequirement(name = "participantToken")
     @ApiResponse(responseCode = "200", description = "검색 성공, 결과 없을 수 있음")
     @ApiResponse(responseCode = "400", description = "쿼리 길이·형식 오류")
     @ApiResponse(responseCode = "404", description = "다른 보드의 토큰(존재 숨김)")
     @RateLimit(permits = 20, windowSeconds = 60, key = RateLimitKey.PARTICIPANT, scope = RateLimitScope.PARTICIPANT_GLOBAL)
-    fun searchPlaceCandidates(
+    fun searchPlaces(
         @PathVariable boardId: String,
-        @RequestParam(required = true) query: String,
+        @RequestParam(required = true, name = "q") query: String,
         @RequestParam(required = false) lon: Double?,
         @RequestParam(required = false) lat: Double?,
         @RequestParam(required = false) radius: Int?,
         @Parameter(hidden = true) @CurrentParticipant principal: ParticipantPrincipal,
     ) = service.searchKeyword(boardId, principal, query, lon, lat, radius)
 
-    @GetMapping("/boards/{boardId}/address-candidates")
-    @Operation(summary = "주소 후보 검색", description = "도로명 또는 지번 주소를 검색합니다.")
+    @GetMapping("/boards/{boardId}/search/addresses")
+    @Operation(summary = "주소 검색", description = "도로명 또는 지번 주소를 검색합니다.")
     @SecurityRequirement(name = "participantToken")
     @ApiResponse(responseCode = "200", description = "검색 성공, 결과 없을 수 있음")
     @ApiResponse(responseCode = "404", description = "다른 보드의 토큰(존재 숨김)")
     @RateLimit(permits = 20, windowSeconds = 60, key = RateLimitKey.PARTICIPANT, scope = RateLimitScope.PARTICIPANT_GLOBAL)
-    fun searchAddressCandidates(
+    fun searchAddresses(
         @PathVariable boardId: String,
-        @RequestParam(required = true) query: String,
+        @RequestParam(required = true, name = "q") query: String,
         @Parameter(hidden = true) @CurrentParticipant principal: ParticipantPrincipal,
     ) = service.searchAddress(boardId, principal, query)
 
-    @GetMapping("/boards/{boardId}/coordinate-address")
-    @Operation(summary = "좌표로 주소 조회", description = "경위도로부터 도로명·지번 주소를 조회합니다.")
+    @GetMapping("/boards/{boardId}/search/reverse-geocode")
+    @Operation(summary = "역지오코딩", description = "경위도로부터 도로명·지번 주소를 조회합니다.")
     @SecurityRequirement(name = "participantToken")
     @ApiResponse(responseCode = "200", description = "조회 성공, 주소 없을 수 있음")
     @ApiResponse(responseCode = "404", description = "다른 보드의 토큰(존재 숨김)")
     @RateLimit(permits = 20, windowSeconds = 60, key = RateLimitKey.PARTICIPANT, scope = RateLimitScope.PARTICIPANT_GLOBAL)
-    fun getCoordinateAddress(
+    fun reverseGeocode(
         @PathVariable boardId: String,
         @RequestParam(required = true) lon: Double,
         @RequestParam(required = true) lat: Double,

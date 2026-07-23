@@ -67,14 +67,14 @@ class P7CanonicalFlowContractTest(
         val place2 = createPlace(host, "식당 2")
 
         // 첫 번째 장소에 좋아요
-        mockMvc.put("/api/v1/boards/${host.boardId}/places/${place1.placeId}/like") {
+        mockMvc.put("/api/v1/boards/${host.boardId}/places/${place1.placeId}/likes/me") {
             bearer(host.token)
-        }.andExpect { status { isOk() } }
+        }.andExpect { status { isNoContent() } }
 
         // 두 번째 장소에 좋아요
-        mockMvc.put("/api/v1/boards/${host.boardId}/places/${place2.placeId}/like") {
+        mockMvc.put("/api/v1/boards/${host.boardId}/places/${place2.placeId}/likes/me") {
             bearer(host.token)
-        }.andExpect { status { isOk() } }
+        }.andExpect { status { isNoContent() } }
 
         // 첫 번째 장소 조회 - likedByMe=true
         val place1Json = mockMvc.get("/api/v1/boards/${host.boardId}/places/${place1.placeId}") {

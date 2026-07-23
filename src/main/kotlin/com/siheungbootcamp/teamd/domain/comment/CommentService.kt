@@ -65,7 +65,7 @@ class CommentService(
         val comment = PlaceComment(
             place = place,
             author = author,
-            body = request.body,
+            body = request.content,
         )
 
         val saved = comments.save(comment)
@@ -94,7 +94,7 @@ class CommentService(
             throw BusinessException(ErrorCode.FORBIDDEN)
         }
 
-        comment.updateBody(request.body)
+        comment.updateBody(request.content)
         comments.save(comment)
     }
 
@@ -132,8 +132,8 @@ class CommentService(
         return CommentResponse(
             commentId = comment.publicId,
             placeId = comment.place.publicId,
-            authorId = comment.author.publicId,
-            body = comment.body,
+            authorParticipantId = comment.author.publicId,
+            content = comment.body,
             createdAt = comment.createdAt,
         )
     }

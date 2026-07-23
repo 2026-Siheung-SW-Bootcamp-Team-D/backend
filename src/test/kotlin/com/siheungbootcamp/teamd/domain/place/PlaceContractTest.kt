@@ -46,9 +46,9 @@ class PlaceContractTest(
         val host = createBoard("장소 보드", "호스트")
 
         // 검색
-        val searchResult = mockMvc.get("/api/v1/boards/${host.boardId}/place-candidates") {
+        val searchResult = mockMvc.get("/api/v1/boards/${host.boardId}/search/places") {
             bearer(host.token)
-            param("query", "테스트 장소")
+            param("q", "테스트 장소")
         }.andExpect { status { isOk() } }
             .andReturn().response.contentAsString
 
@@ -62,14 +62,14 @@ class PlaceContractTest(
             content = """
             {
               "name": "${candidate.path("name").asText()}",
-              "lon": ${candidate.path("lon").asDouble()},
-              "lat": ${candidate.path("lat").asDouble()},
+              "lon": ${candidate.path("location").path("lon").asDouble()},
+              "lat": ${candidate.path("location").path("lat").asDouble()},
               "addressName": "${candidate.path("addressName").asText()}",
               "roadAddressName": "${candidate.path("roadAddressName").asText()}",
               "internalCategory": "${candidate.path("internalCategory").asText()}",
               "provider": "KAKAO",
               "providerPlaceId": "$placeId",
-              "providerPlaceUrl": "${candidate.path("providerPlaceUrl").asText()}",
+              "providerPlaceUrl": "${candidate.path("sourceUrl").asText()}",
               "source": "SEARCH_SELECT"
             }
             """.trimIndent()
@@ -94,9 +94,9 @@ class PlaceContractTest(
         val host = createBoard("검색 보드", "호스트")
 
         repeat(3) {
-            mockMvc.get("/api/v1/boards/${host.boardId}/place-candidates") {
+            mockMvc.get("/api/v1/boards/${host.boardId}/search/places") {
                 bearer(host.token)
-                param("query", "카페")
+                param("q", "카페")
             }.andExpect { status { isOk() } }
         }
 
@@ -111,9 +111,9 @@ class PlaceContractTest(
     fun `V2-4 URL 형식 검색어는 400 URL_QUERY_NOT_ALLOWED를 반환한다`() {
         val host = createBoard("URL 검증 보드", "호스트")
 
-        mockMvc.get("/api/v1/boards/${host.boardId}/place-candidates") {
+        mockMvc.get("/api/v1/boards/${host.boardId}/search/places") {
             bearer(host.token)
-            param("query", "https://example.com")
+            param("q", "https://example.com")
         }.andExpect {
             status { isBadRequest() }
             jsonPath("$.error.code") { value("URL_QUERY_NOT_ALLOWED") }
@@ -126,9 +126,9 @@ class PlaceContractTest(
         kakaoStubServer.setKeywordResponseMode(KakaoStubServer.ResponseMode.RATE_LIMIT)
         try {
             // stub이 처음 2회는 429(Retry-After: 1)를, 3번째는 200을 반환하도록 되어 있다.
-            mockMvc.get("/api/v1/boards/${host.boardId}/place-candidates") {
+            mockMvc.get("/api/v1/boards/${host.boardId}/search/places") {
                 bearer(host.token)
-                param("query", "테스트")
+                param("q", "테스트")
             }.andExpect { status { isOk() } }
 
             assertEquals(3, kakaoStubServer.requestCount("keyword"), "429 2회 이후 3번째 요청에서 성공해야 하고, 총 요청은 3회 이하여야 한다")
@@ -142,9 +142,9 @@ class PlaceContractTest(
         val host = createBoard("서버 오류 보드", "호스트")
         kakaoStubServer.setKeywordResponseMode(KakaoStubServer.ResponseMode.SERVER_ERROR)
         try {
-            mockMvc.get("/api/v1/boards/${host.boardId}/place-candidates") {
+            mockMvc.get("/api/v1/boards/${host.boardId}/search/places") {
                 bearer(host.token)
-                param("query", "테스트")
+                param("q", "테스트")
             }.andExpect {
                 status { isServiceUnavailable() }
                 jsonPath("$.error.code") { value("EXTERNAL_UNAVAILABLE") }
@@ -159,9 +159,9 @@ class PlaceContractTest(
         val host = createBoard("JSON 오류 보드", "호스트")
         kakaoStubServer.setKeywordResponseMode(KakaoStubServer.ResponseMode.MALFORMED)
         try {
-            mockMvc.get("/api/v1/boards/${host.boardId}/place-candidates") {
+            mockMvc.get("/api/v1/boards/${host.boardId}/search/places") {
                 bearer(host.token)
-                param("query", "테스트")
+                param("q", "테스트")
             }.andExpect {
                 status { isBadGateway() }
                 jsonPath("$.error.code") { value("EXTERNAL_BAD_RESPONSE") }
@@ -199,9 +199,9 @@ class PlaceContractTest(
         val host = createBoard("로그 검사 보드", "호스트")
         val secretQuery = "민감한-검색어-12345"
 
-        mockMvc.get("/api/v1/boards/${host.boardId}/place-candidates") {
+        mockMvc.get("/api/v1/boards/${host.boardId}/search/places") {
             bearer(host.token)
-            param("query", secretQuery)
+            param("q", secretQuery)
         }.andExpect { status { isOk() } }
 
         assertFalse(output.all.contains(secretQuery), "로그에 검색어가 나타나면 안 됨")
@@ -327,16 +327,16 @@ class PlaceContractTest(
         val host = createBoard("검색 위치 검증 보드", "호스트")
 
         // lon만 있고 lat이 없음
-        mockMvc.get("/api/v1/boards/${host.boardId}/place-candidates") {
+        mockMvc.get("/api/v1/boards/${host.boardId}/search/places") {
             bearer(host.token)
-            param("query", "테스트")
+            param("q", "테스트")
             param("lon", "127.0")
         }.andExpect { status { isBadRequest() } }
 
         // radius가 20000 초과
-        mockMvc.get("/api/v1/boards/${host.boardId}/place-candidates") {
+        mockMvc.get("/api/v1/boards/${host.boardId}/search/places") {
             bearer(host.token)
-            param("query", "테스트")
+            param("q", "테스트")
             param("lon", "127.0")
             param("lat", "37.0")
             param("radius", "20001")

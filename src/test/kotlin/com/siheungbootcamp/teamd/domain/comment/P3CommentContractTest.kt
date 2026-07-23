@@ -52,11 +52,11 @@ class P3CommentContractTest(
         val commentBody = mockMvc.post("/api/v1/boards/${host.boardId}/places/${place.placeId}/comments") {
             bearer(host.token)
             contentType = MediaType.APPLICATION_JSON
-            content = """{"body":"여기 웨이팅이 길 수 있어요."}"""
+            content = """{"content":"여기 웨이팅이 길 수 있어요."}"""
         }.andExpect { status { isCreated() } }
             .andReturn().response.contentAsString
         val commentId = objectMapper.readTree(commentBody).path("commentId").asText()
-        assertEquals("여기 웨이팅이 길 수 있어요.", objectMapper.readTree(commentBody).path("body").asText())
+        assertEquals("여기 웨이팅이 길 수 있어요.", objectMapper.readTree(commentBody).path("content").asText())
 
         // 댓글 목록 조회
         val listBody = mockMvc.get("/api/v1/boards/${host.boardId}/places/${place.placeId}/comments") {
@@ -69,14 +69,14 @@ class P3CommentContractTest(
         mockMvc.post("/api/v1/boards/${host.boardId}/places/${place.placeId}/comments") {
             bearer(member)
             contentType = MediaType.APPLICATION_JSON
-            content = """{"body":"멤버의 댓글"}"""
+            content = """{"content":"멤버의 댓글"}"""
         }.andExpect { status { isCreated() } }
 
         // 호스트가 자신의 댓글 수정
         mockMvc.patch("/api/v1/boards/${host.boardId}/places/${place.placeId}/comments/$commentId") {
             bearer(host.token)
             contentType = MediaType.APPLICATION_JSON
-            content = """{"body":"수정된 댓글"}"""
+            content = """{"content":"수정된 댓글"}"""
         }.andExpect { status { isOk() } }
 
         // 수정 확인
@@ -85,7 +85,7 @@ class P3CommentContractTest(
         }.andExpect { status { isOk() } }
             .andReturn().response.contentAsString
         val updatedComment = objectMapper.readTree(afterUpdateBody).path("items").find { it.path("commentId").asText() == commentId }
-        assertEquals("수정된 댓글", updatedComment?.path("body")?.asText())
+        assertEquals("수정된 댓글", updatedComment?.path("content")?.asText())
 
         // 호스트가 자신의 댓글 삭제
         mockMvc.delete("/api/v1/boards/${host.boardId}/places/${place.placeId}/comments/$commentId") {
@@ -110,7 +110,7 @@ class P3CommentContractTest(
         val commentBody = mockMvc.post("/api/v1/boards/${host.boardId}/places/${place.placeId}/comments") {
             bearer(host.token)
             contentType = MediaType.APPLICATION_JSON
-            content = """{"body":"호스트의 댓글"}"""
+            content = """{"content":"호스트의 댓글"}"""
         }.andExpect { status { isCreated() } }
             .andReturn().response.contentAsString
 
@@ -120,7 +120,7 @@ class P3CommentContractTest(
         mockMvc.patch("/api/v1/boards/${host.boardId}/places/${place.placeId}/comments/$commentId") {
             bearer(member)
             contentType = MediaType.APPLICATION_JSON
-            content = """{"body":"수정 시도"}"""
+            content = """{"content":"수정 시도"}"""
         }.andExpect {
             status { isForbidden() }
             jsonPath("$.error.code") { value("FORBIDDEN") }
@@ -143,7 +143,7 @@ class P3CommentContractTest(
         val comment2Body = mockMvc.post("/api/v1/boards/${host.boardId}/places/${place.placeId}/comments") {
             bearer(member)
             contentType = MediaType.APPLICATION_JSON
-            content = """{"body":"멤버의 댓글"}"""
+            content = """{"content":"멤버의 댓글"}"""
         }.andExpect { status { isCreated() } }
             .andReturn().response.contentAsString
 
@@ -165,7 +165,7 @@ class P3CommentContractTest(
             mockMvc.post("/api/v1/boards/${host.boardId}/places/${place.placeId}/comments") {
                 bearer(host.token)
                 contentType = MediaType.APPLICATION_JSON
-                content = """{"body":"댓글 $it"}"""
+                content = """{"content":"댓글 $it"}"""
             }.andExpect { status { isCreated() } }
         }
 
@@ -208,7 +208,7 @@ class P3CommentContractTest(
             mockMvc.post("/api/v1/boards/${host.boardId}/places/${place.placeId}/comments") {
                 bearer(authors[it % authors.size])
                 contentType = MediaType.APPLICATION_JSON
-                content = """{"body":"댓글 $it"}"""
+                content = """{"content":"댓글 $it"}"""
             }.andExpect { status { isCreated() } }
         }
 
@@ -247,7 +247,7 @@ class P3CommentContractTest(
         mockMvc.post("/api/v1/boards/${host.boardId}/places/${place.placeId}/comments") {
             bearer(host.token)
             contentType = MediaType.APPLICATION_JSON
-            content = """{"body":"첫 번째 댓글"}"""
+            content = """{"content":"첫 번째 댓글"}"""
         }.andExpect { status { isCreated() } }
     }
 
@@ -261,7 +261,7 @@ class P3CommentContractTest(
         val commentBody = mockMvc.post("/api/v1/boards/${host.boardId}/places/${place.placeId}/comments") {
             bearer(member)
             contentType = MediaType.APPLICATION_JSON
-            content = """{"body":"원본 댓글"}"""
+            content = """{"content":"원본 댓글"}"""
         }.andExpect { status { isCreated() } }
             .andReturn().response.contentAsString
 
@@ -271,7 +271,7 @@ class P3CommentContractTest(
         mockMvc.patch("/api/v1/boards/${host.boardId}/places/${place.placeId}/comments/$commentId") {
             bearer(member)
             contentType = MediaType.APPLICATION_JSON
-            content = """{"body":"수정된 댓글"}"""
+            content = """{"content":"수정된 댓글"}"""
         }.andExpect { status { isOk() } }
 
         // 수정 확인
@@ -281,7 +281,7 @@ class P3CommentContractTest(
             .andReturn().response.contentAsString
 
         val updatedComment = objectMapper.readTree(listBody).path("items")[0]
-        assertEquals("수정된 댓글", updatedComment.path("body").asText())
+        assertEquals("수정된 댓글", updatedComment.path("content").asText())
     }
 
     @Test
@@ -292,7 +292,7 @@ class P3CommentContractTest(
         val commentBody = mockMvc.post("/api/v1/boards/${host.boardId}/places/${place.placeId}/comments") {
             bearer(host.token)
             contentType = MediaType.APPLICATION_JSON
-            content = """{"body":"삭제할 댓글"}"""
+            content = """{"content":"삭제할 댓글"}"""
         }.andExpect { status { isCreated() } }
             .andReturn().response.contentAsString
 
