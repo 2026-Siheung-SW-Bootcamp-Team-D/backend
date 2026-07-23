@@ -5,6 +5,7 @@ import com.siheungbootcamp.teamd.domain.board.ParticipantRepository
 import com.siheungbootcamp.teamd.domain.course.CourseRepository
 import com.siheungbootcamp.teamd.domain.course.CourseStopRepository
 import com.siheungbootcamp.teamd.domain.course.CourseStopRole
+import com.siheungbootcamp.teamd.global.auth.AuthorizationChecks
 import com.siheungbootcamp.teamd.global.auth.ParticipantPrincipal
 import com.siheungbootcamp.teamd.global.error.BusinessException
 import com.siheungbootcamp.teamd.global.error.ErrorCode
@@ -21,6 +22,7 @@ class DepartureService(
     private val courseRepository: CourseRepository,
     private val courseStopRepository: CourseStopRepository,
     private val participantRepository: ParticipantRepository,
+    private val checks: AuthorizationChecks,
 ) {
 
     data class CalculationRequestResult(val isNewRequest: Boolean, val status: String, val courseVersion: Int)
@@ -35,6 +37,7 @@ class DepartureService(
 
     @Transactional(readOnly = false)
     fun requestCalculation(boardId: String, principal: ParticipantPrincipal): CalculationRequestResult {
+        checks.requireBoard(principal, boardId)
         val participant = participantRepository.findById(principal.participantId)
             .orElseThrow { BusinessException(ErrorCode.RESOURCE_NOT_FOUND) }
 
@@ -59,8 +62,10 @@ class DepartureService(
                     CalculationRequestResult(false, existing.status, currentCourse.version)
                 }
                 else -> {
-                    val new = DepartureCalculation(participant, currentCourse, DepartureCalculation.Status.CALCULATING.name)
-                    departureRepository.save(new)
+                    // STALE/UNAVAILABLE/FAILED: (participant_id, course_id) 유일 제약 때문에 새 행을 만들 수 없다.
+                    // 기존 행을 재사용해 CALCULATING으로 되돌리고 이전 결과 필드를 비운다.
+                    existing.resetToCalculating()
+                    departureRepository.save(existing)
                     CalculationRequestResult(true, DepartureCalculation.Status.CALCULATING.name, currentCourse.version)
                 }
             }
@@ -72,6 +77,7 @@ class DepartureService(
     }
 
     fun getDepartureGuide(boardId: String, principal: ParticipantPrincipal): DepartureGuideResult {
+        checks.requireBoard(principal, boardId)
         val participant = participantRepository.findById(principal.participantId)
             .orElseThrow { BusinessException(ErrorCode.RESOURCE_NOT_FOUND) }
 
@@ -93,10 +99,13 @@ class DepartureService(
                 FirstMeetingInfo(it.place.publicId, it.place.name, it.scheduledAt.toString())
             }
 
-            val transitInfo = if (calculation.totalSeconds != null && calculation.transferCount != null &&
-                calculation.fareAmount != null && calculation.totalWalkSeconds != null) {
-                TransitInfo(calculation.totalSeconds!!, calculation.transferCount!!,
-                    FareInfo(calculation.fareAmount!!), calculation.totalWalkSeconds!!)
+            val totalSeconds = calculation.totalSeconds
+            val transferCount = calculation.transferCount
+            val fareAmount = calculation.fareAmount
+            val totalWalkSeconds = calculation.totalWalkSeconds
+            val transitInfo = if (totalSeconds != null && transferCount != null &&
+                fareAmount != null && totalWalkSeconds != null) {
+                TransitInfo(totalSeconds, transferCount, FareInfo(fareAmount), totalWalkSeconds)
             } else null
 
             DepartureGuideResult(calculation.status, currentCourse.version, firstMeetingInfo, transitInfo,

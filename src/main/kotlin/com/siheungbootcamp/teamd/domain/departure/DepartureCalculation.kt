@@ -67,4 +67,16 @@ class DepartureCalculation(
     fun markStale() {
         this.status = Status.STALE.name
     }
+
+    /** STALE/UNAVAILABLE/FAILED 상태의 기존 행을 재계산 대상으로 되돌린다. (participant_id, course_id) 유일
+     * 제약 때문에 같은 조합의 새 행을 만들 수 없어, 이전 결과 필드를 비우고 이 행을 재사용해야 한다. */
+    fun resetToCalculating() {
+        this.status = Status.CALCULATING.name
+        this.totalSeconds = null
+        this.transferCount = null
+        this.fareAmount = null
+        this.totalWalkSeconds = null
+        this.recommendedDepartureAt = null
+        this.calculatedAt = null
+    }
 }
