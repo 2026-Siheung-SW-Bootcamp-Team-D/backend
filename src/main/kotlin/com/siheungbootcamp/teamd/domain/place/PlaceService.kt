@@ -93,15 +93,20 @@ class PlaceService(
     fun searchNearby(
         boardId: String,
         principal: ParticipantPrincipal,
-        lon: Double,
-        lat: Double,
+        lon: Double?,
+        lat: Double?,
         query: String?,
         category: String?,
         radius: Int,
     ): PlaceCandidateResponse {
         checks.requireBoard(principal, boardId)
 
-        // 검증: lon/lat은 이미 웹 계층에서 검증됨
+        // 검증: lon/lat 필수
+        if (lon == null || lat == null) {
+            throw BusinessException(ErrorCode.INVALID_ARGUMENT)
+        }
+
+        // 검증: lon/lat 범위
         if (lon < -180.0 || lon > 180.0 || lat < -90.0 || lat > 90.0) {
             throw BusinessException(ErrorCode.INVALID_ARGUMENT)
         }

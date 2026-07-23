@@ -79,8 +79,8 @@ class PlaceController(private val service: PlaceService) {
     @RateLimit(permits = 20, windowSeconds = 60, key = RateLimitKey.PARTICIPANT, scope = RateLimitScope.PARTICIPANT_GLOBAL)
     fun searchNearbyPlaces(
         @PathVariable boardId: String,
-        @RequestParam(required = true) lon: Double,
-        @RequestParam(required = true) lat: Double,
+        @RequestParam(required = false) lon: Double?,
+        @RequestParam(required = false) lat: Double?,
         @RequestParam(required = false, name = "q") query: String?,
         @RequestParam(required = false) category: String?,
         @RequestParam(defaultValue = "1000") radius: Int,
