@@ -84,6 +84,61 @@ class AreaJobStateWriter(
     }
 
     /**
+     * Task 5: 새로운 구조로 작업을 성공 상태로 표시한다.
+     * 참여자 중심점, 익명 isochrone, nullable 공통 영역, 기준점 리스트를 저장한다.
+     */
+    @Transactional
+    fun markSucceededWithNewFormat(job: AreaSearchJob, computation: AreaComputationResult) {
+        // 결과 JSON 구성 (새로운 P7 형식)
+        val result = (mapper.createObjectNode() as ObjectNode).apply {
+
+            // 참여자 중심점
+            if (computation.participantCenter != null) {
+                set("participantCenter", mapper.valueToTree(computation.participantCenter))
+            } else {
+                putNull("participantCenter")
+            }
+
+            // 익명 isochrone
+            val isochronesArray = mapper.createArrayNode()
+            computation.isochrones.forEach { isochrone ->
+                isochronesArray.add(
+                    (mapper.createObjectNode() as ObjectNode).apply {
+                        put("areaId", isochrone.areaId)
+                        set("geometry", isochrone.geometry)
+                    }
+                )
+            }
+            set("isochrones", isochronesArray)
+
+            // 공통 영역 (nullable)
+            if (computation.commonArea != null) {
+                set("commonArea", computation.commonArea)
+            } else {
+                putNull("commonArea")
+            }
+
+            // 기준점 리스트
+            val anchorsArray = mapper.createArrayNode()
+            computation.anchors.forEach { anchor ->
+                anchorsArray.add(
+                    (mapper.createObjectNode() as ObjectNode).apply {
+                        put("anchorId", anchor.anchorId)
+                        put("name", anchor.name)
+                        put("lon", anchor.lon)
+                        put("lat", anchor.lat)
+                        put("centerDistanceMeters", anchor.centerDistanceMeters)
+                    }
+                )
+            }
+            set("anchors", anchorsArray)
+        }
+
+        job.markSucceeded(result)
+        jobRepository.save(job)
+    }
+
+    /**
      * 작업을 실패 상태로 표시한다.
      * 실제 오류 코드를 보존한다.
      */

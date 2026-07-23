@@ -32,10 +32,41 @@ data class GetAreaSearchJobResponse(
     val errorCode: String?,
 )
 
-data class AreaSearchResult(
-    val candidates: List<AreaCandidateResponse>,
+data class ParticipantCenterDto(
+    val lon: Double,
+    val lat: Double,
 )
 
+data class AnonymousIsochroneDto(
+    val areaId: String,
+    val geometry: JsonNode,
+)
+
+data class AreaComputationResult(
+    val isochrones: List<AnonymousIsochroneDto>,
+    val commonArea: JsonNode?,
+    val participantCenter: ParticipantCenterDto?,
+    val anchors: List<AreaAnchorDto>,
+) {
+    data class ParticipantCenter(val lon: Double, val lat: Double)
+}
+
+data class AreaAnchorDto(
+    val anchorId: String,
+    val name: String,
+    val lon: Double,
+    val lat: Double,
+    val centerDistanceMeters: Int,
+)
+
+data class AreaSearchResult(
+    val participantCenter: ParticipantCenterDto?,
+    val isochrones: List<AnonymousIsochroneDto>,
+    val commonArea: JsonNode?,
+    val anchors: List<AreaAnchorDto>,
+)
+
+// Legacy DTO for backward compatibility (internal use)
 data class AreaCandidateResponse(
     val candidateId: String,
     val name: String,
