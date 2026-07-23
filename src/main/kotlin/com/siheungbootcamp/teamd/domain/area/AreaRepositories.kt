@@ -1,7 +1,10 @@
 package com.siheungbootcamp.teamd.domain.area
 
+import jakarta.persistence.LockModeType
 import org.springframework.data.jpa.repository.JpaRepository
+import org.springframework.data.jpa.repository.Lock
 import org.springframework.data.jpa.repository.Query
+import org.springframework.data.repository.query.Param
 import org.springframework.stereotype.Repository
 import java.time.Instant
 
@@ -42,7 +45,21 @@ interface AreaSearchJobRepository : JpaRepository<AreaSearchJob, Long> {
     fun findNextPending(): AreaSearchJob?
 
     /**
-     * RUNNING 상태에서 오래된 행(stale)을 QUEUED로 되돌린다.
+     * 다음 처리할 작업을 원자적으로 조회하고 잠금한다.
+     * 두 executor 인스턴스가 같은 작업을 동시에 집을 수 없도록 보장한다.
+     * FOR UPDATE SKIP LOCKED: 다른 트랜잭션이 잠금 중인 행을 건너뛰고, 잠금 가능한 행만 반환.
+     */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("""
+        SELECT j FROM AreaSearchJob j
+        WHERE (j.status = 'QUEUED' OR (j.status = 'RETRY_WAIT' AND j.nextRetryAt <= CURRENT_TIMESTAMP))
+        ORDER BY j.createdAt ASC
+        LIMIT 1
+    """)
+    fun findNextPendingForUpdate(): AreaSearchJob?
+
+    /**
+     * RUNNING 상태에서 오래된 행(stale)을 조회한다.
      */
     fun findAllByStatusAndStartedAtBefore(status: String, before: Instant): List<AreaSearchJob>
 }
