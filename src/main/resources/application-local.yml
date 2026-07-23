@@ -8,3 +8,4 @@ app:
     allowed-origins: http://localhost:5173
   odsay:
     api-key: ${ODSAY_API_KEY:stub}
+    base-url: https://api.odsay.com
