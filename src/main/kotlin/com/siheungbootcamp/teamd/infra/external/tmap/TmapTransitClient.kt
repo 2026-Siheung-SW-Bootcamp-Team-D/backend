@@ -69,15 +69,23 @@ class TmapTransitClient(
             val root = mapper.readTree(response)
             val itineraries = root.path("metaData").path("plan").path("itineraries")
 
-            if (!itineraries.isArray || itineraries.isEmpty) {
+            // itineraries 자체가 없으면(metaData/plan 구조가 깨진 응답) 계약 위반이다.
+            // "경로가 없다"는 정상적인 빈 배열과 구분해야 한다 — 전자는 재시도 대상(EXTERNAL_BAD_RESPONSE),
+            // 후자만 도메인상 정상인 UNAVAILABLE(null)로 수렴해야 한다.
+            if (!itineraries.isArray) {
+                logger.warn("tmap_transit_malformed_response missing=itineraries")
+                throw BusinessException(ErrorCode.EXTERNAL_BAD_RESPONSE)
+            }
+            if (itineraries.isEmpty) {
                 logger.info("tmap_transit_no_route")
                 return null
             }
 
             val itinerary = itineraries[0]
 
-            // 경로가 있다고 응답했는데 필수 필드가 없으면 계약 위반이다. 0으로 조용히 채우면
-            // 잘못된 recommendedDepartureAt이 계산되므로 명시적으로 실패시킨다.
+            // 경로가 있다고 응답했는데 필수 필드가 없거나 정수로 변환할 수 없으면 계약 위반이다.
+            // isMissingNode만 검사하면 null·문자열·객체 값이 asInt()에서 조용히 0으로 강제 변환되어
+            // 이동시간 0초 같은 잘못된 결과가 READY로 저장될 수 있으므로 정수 변환 가능 여부까지 확인한다.
             val totalFareNode = itinerary.path("fare").path("regular").path("totalFare")
             val requiredFields = mapOf(
                 "totalTime" to itinerary.path("totalTime"),
@@ -86,8 +94,8 @@ class TmapTransitClient(
                 "fare.regular.totalFare" to totalFareNode,
             )
             requiredFields.forEach { (field, node) ->
-                if (node.isMissingNode) {
-                    logger.warn("tmap_transit_missing_field field=$field")
+                if (!node.canConvertToInt()) {
+                    logger.warn("tmap_transit_invalid_field field=$field")
                     throw BusinessException(ErrorCode.EXTERNAL_BAD_RESPONSE)
                 }
             }
