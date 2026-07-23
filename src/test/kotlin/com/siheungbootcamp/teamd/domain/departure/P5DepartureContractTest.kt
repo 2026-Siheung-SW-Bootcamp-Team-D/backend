@@ -81,7 +81,7 @@ class P5DepartureContractTest(
         }.andExpect { status { isAccepted() } }
 
         // 큐의 모든 작업 처리 (다른 테스트의 leftover row 포함)
-        repeat(100) { if (!departureJobExecutor.processOne()) return@repeat }
+        for (i in 0 until 100) { if (!departureJobExecutor.processOne()) break }
 
         val res = mockMvc.get("/api/v1/boards/${host.boardId}/participants/me/departure-guide") {
             bearer(host.token)
@@ -129,7 +129,7 @@ class P5DepartureContractTest(
         }.andExpect { status { isAccepted() } }
 
         // 큐의 모든 작업 처리 후 남은 CALCULATING 행 확인
-        repeat(100) { if (!departureJobExecutor.processOne()) return@repeat }
+        for (i in 0 until 100) { if (!departureJobExecutor.processOne()) break }
 
         // DB에 행 1개만 (처리되어 READY로 변했으므로 CALCULATING 행은 0)
         val count = jdbcClient.sql("select count(*) from departure_calculation where status='CALCULATING'")
@@ -151,7 +151,7 @@ class P5DepartureContractTest(
             bearer(p.token)
             contentType = MediaType.APPLICATION_JSON; content = "{}"
         }.andExpect { status { isAccepted() } }
-        repeat(100) { if (!departureJobExecutor.processOne()) return@repeat }
+        for (i in 0 until 100) { if (!departureJobExecutor.processOne()) break }
 
         tmapStubServer.resetCount()
         mockMvc.post("/api/v1/boards/${host.boardId}/participants/me/departure-calculations") {
@@ -201,7 +201,7 @@ class P5DepartureContractTest(
             contentType = MediaType.APPLICATION_JSON; content = "{}"
         }.andExpect { status { isAccepted() } }
 
-        repeat(100) { if (!departureJobExecutor.processOne()) return@repeat }
+        for (i in 0 until 100) { if (!departureJobExecutor.processOne()) break }
         val res = mockMvc.get("/api/v1/boards/${host.boardId}/participants/me/departure-guide") {
             bearer(p.token)
         }.andReturn().response
@@ -223,7 +223,7 @@ class P5DepartureContractTest(
             contentType = MediaType.APPLICATION_JSON; content = "{}"
         }.andExpect { status { isAccepted() } }
 
-        repeat(100) { if (!departureJobExecutor.processOne()) return@repeat }
+        for (i in 0 until 100) { if (!departureJobExecutor.processOne()) break }
         val res = mockMvc.get("/api/v1/boards/${host.boardId}/participants/me/departure-guide") {
             bearer(p.token)
         }.andReturn().response
@@ -280,7 +280,7 @@ class P5DepartureContractTest(
         assertTrue(before > 0)
 
         tmapStubServer.responseMode = TmapStubServer.ResponseMode.SUCCESS
-        repeat(100) { if (!departureJobExecutor.processOne()) return@repeat }
+        for (i in 0 until 100) { if (!departureJobExecutor.processOne()) break }
 
         val res = mockMvc.get("/api/v1/boards/${host.boardId}/participants/me/departure-guide") {
             bearer(p.token)
@@ -326,7 +326,7 @@ class P5DepartureContractTest(
         }.andExpect { status { isAccepted() } }
 
         // 큐의 모든 작업 처리
-        repeat(100) { if (!departureJobExecutor.processOne()) return@repeat }
+        for (i in 0 until 100) { if (!departureJobExecutor.processOne()) break }
 
         // 계산 결과 조회
         val req2 = mockMvc.get("/api/v1/boards/${host.boardId}/participants/me/departure-guide") {
