@@ -1,130 +1,629 @@
-# P6 — 만나기 좋은 지역 찾기 (ODsay + JTS + 비동기 작업)
+# P6 Candidate Board Completion and Area Fallback Implementation Plan
 
-> 선행: P1(출발지), **P5(Job Executor 뼈대)**, I1(ODsay 고정 IP 등록 — 운영 검증용)
-> 엔드포인트: 25~26 (API명세서 9절)
-> **가장 복잡한 단계. 마지막에 한다.**
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
----
+**Goal:** 이미 완료된 P0~P5 동작을 보존하면서 공동 후보 보드에 좋아요·현재 선택·초대 정보 재확인을 추가하고, ODsay·JTS·Kakao만 사용하는 지역 탐색 fallback을 완성한다.
 
-## 왜 마지막인가
+**Architecture:** P6는 기존 테이블과 API를 삭제하거나 이름을 바꾸지 않는 additive change다. `place_like`와 보드의 선택 포인터만 V2 migration으로 추가하고, 기존 참여 토큰이 같은 보드의 활성 참여자인지만 검사해 신규 기능 권한을 통일한다. 지역 작업은 기존 `JobExecutor`와 `area_search_job`/`area_candidate`를 재사용하되 TMAP 평가 없이 `ODsay 도달권 → JTS 교집합 → Kakao 기준점 1~3개`까지만 수행한다.
 
-1. 외부 API 3종(ODsay·Kakao·TMAP)을 한 작업 안에서 순차 호출한다
-2. 4단계 파이프라인 + 진행률 + 재시도 + 재시작 복구가 전부 필요하다
-3. **ODsay는 고정 IP 등록이 선행**되어야 운영에서 동작한다(I1 산출물)
+**Tech Stack:** Kotlin 2.3.21, Java 21, Spring Boot 4.1, Spring MVC, Spring Data JPA, PostgreSQL, Flyway, JTS, ODsay, Kakao Local, MockMvc, Testcontainers
 
-단 **선행 없이 미리 할 수 있는 부분이 있다** → Wave 2 레인 C: JTS 폴리곤 유틸과 ODsay 어댑터를 **DB·Job 연동 없이 단위 테스트로** 먼저 완성해 둔다.
+## Global Constraints
 
----
-
-## 작업 목록
-
-### T6-1. JTS 폴리곤 유틸 (선행 없음, 조기 착수 가능)
-`org.locationtech.jts:jts-core` 추가.
-
-- GeoJSON(Polygon/MultiPolygon) ↔ JTS Geometry 변환
-- N개 도달권의 **교집합** 계산
-- 면적(km²) 계산 — WGS84 좌표를 그대로 면적 계산에 쓰지 말고 적절한 투영 또는 구면 면적 공식 사용
-- 결과 조각 중 **면적 상위 3개만** 반환
-- 포함 여부 판정(후보 좌표가 교집합 안에 있는가)
-- **PostGIS 사용 금지** — 연산은 앱, 저장은 JSONB (ERD 4절)
-
-### T6-2. ODsay 도달권 어댑터 (선행 없음, 조기 착수 가능)
-- 입력: 출발 좌표, `durationMin`(30/45/60)
-- 출력: WGS84 GeoJSON 폴리곤
-- P2 공통 기반의 429 백오프·오류 매핑 재사용
-- **고정 IP 필요**: 로컬 개발에서는 stub, 운영 검증은 VM에서만 (아키텍처 1절)
-
-### T6-3. `AreaSearchJob` 도메인
-ERD 2.6·2.7. 상태 `QUEUED` → `RUNNING` → (`RETRY_WAIT`) → `SUCCEEDED`/`FAILED`
-
-- `snapshot jsonb` — **대상 참여자 ID 목록만** 저장한다. 예: `{"participantIds":["ptc_01H...","ptc_02H..."]}`
-  - `durationMin`은 `duration_min` 컬럼에 있으므로 snapshot에 중복 저장하지 않는다
-  - **출발 좌표를 복사하지 않는다.** 좌표는 암호화 저장 대상인데 여기에 복사하면 암호화를 우회하는 두 번째 저장소가 생긴다 (ERD 설계 원칙 6)
-  - 좌표는 실행 시점에 `participant.origin_ciphertext`에서 복호화해 읽고 **메모리에서만** 사용한다
-
-**입력 좌표 일관성 — 변경 잠금으로 보장 (리뷰 결정 #1)**
-
-작업이 4개 phase를 도는 몇 분 사이에 출발지가 바뀌면 한 결과 안에서 단계별 기준이 섞인다. 이를 좌표 복사 대신 **변경 잠금**으로 막는다.
-
-- 보드에 활성 지역 찾기 작업(`QUEUED`/`RUNNING`/`RETRY_WAIT`)이 있는 동안, 그 작업 대상 참여자의 출발지 변경(엔드포인트 8)을 **`409 RESOURCE_CONFLICT`로 거부**한다 (P1의 `PATCH participants/me`에서 검사)
-- 따라서 어느 phase에서 읽어도 좌표가 동일하고, 재시작 후 재실행도 같은 입력을 쓴다 — 좌표를 저장하지 않고 일관성을 얻는다
-- 보드당 활성 작업은 하나뿐이므로 잠금 판정이 단순하다
-- `progress jsonb` — `{phase, done, total}`
-- `result jsonb` — 교집합 GeoJSON + 요약
-- `AreaCandidate` — `metrics jsonb`, `reasons jsonb`, `rank 1~3`
-
-### T6-4. 엔드포인트 25 — `POST /area-search-jobs`
-**호스트 전용.** 검증 순서
-
-**잠금 순서 (좌표 고정의 핵심, 2차 blocker #1)**: 검증 전에 **대상 참여자 행들을 ID 오름차순으로 `SELECT … FOR UPDATE`** 로 잠근다 → 출발지 검증 → job 생성 → 커밋. 이렇게 해야 동시에 들어온 출발지 `PATCH`(엔드포인트 8, 같은 행을 `FOR UPDATE`)와 직렬화되어 "생성 시점 좌표 고정"이 실제로 성립한다. 단순 exists 조회로는 막을 수 없다. (잠금 계약 전문은 계획 02 T1-4b)
-
-1. `durationMin` ∈ {30, 45, 60}, 대상 **최소 2명**
-2. 출발지 미등록자 포함 → `422 ORIGIN_REQUIRED`
-3. 같은 보드의 활성 작업(`QUEUED`/`RUNNING`/`RETRY_WAIT`) 존재 → **`409 JOB_ALREADY_RUNNING`**
-   - 부분 unique 인덱스 위반 예외를 변환하는 방식으로 처리 (선조회만으로는 경쟁 상태를 못 막는다)
-4. 일일 예산 초과 → `503 QUOTA_EXCEEDED`
-
-응답 `202` + `Location` + `Retry-After: 2` + `estimatedExternalCalls{odsay, kakaoLocal, tmapTransit}`
-Rate limit: **보드당 3회/시간**
-
-### T6-5. 작업 실행 파이프라인 (P5의 Job Executor 재사용)
-`SELECT ... FOR UPDATE SKIP LOCKED`로 **한 작업만 선점** → 즉시 `RUNNING` 저장하고 트랜잭션 종료 → 이후 외부 호출은 트랜잭션 밖에서.
-
-선점 직후 대상 참여자의 출발지를 복호화한다. **출발지 변경은 잠겨 있지만(위), 참여자 비활성화 등으로 좌표가 사라진 예외 상황이면 작업을 `FAILED`로 종료**한다(사유 `ORIGIN_REQUIRED`). 이미 `202`를 반환한 뒤이므로 HTTP 오류가 아니라 작업 종료 상태로 처리한다.
-
-| phase | 내용 | 실패 시 |
-|---|---|---|
-| `ISOCHRONE` | 참여자 수만큼 ODsay 도달권 | 재시도 소진 → `EXTERNAL_UNAVAILABLE` |
-| `INTERSECTION` | JTS 교집합, 면적 상위 3조각 | 교집합 없음 → `NO_INTERSECTION` |
-| `HUB_COLLECTION` | Kakao Local로 역·기차역·터미널·시청·시장 후보 수집 | 후보 없음 → `NO_HUB_FOUND` |
-| `TRANSIT_EVALUATION` | **최대 6개 후보** × 참여자 수 TMAP Transit 평가 | 일부 참여자 경로 없음 → **작업은 계속**, `unreachableCount` 증가 |
-
-- 각 phase 종료 시 `progress`를 짧은 트랜잭션으로 갱신
-- 평가 지표: `avgSeconds`, `maxSeconds`, `transferAvg`, `unreachableCount`
-- 상위 3개를 `rank` 1~3으로 저장하고 `reasons` 문자열 배열 생성(예: "평균 이동시간이 가장 짧음")
-- 재시도: `RETRY_WAIT` + `next_retry_at` 저장 (P5의 인메모리 재시도와 **다른 모델**임에 주의)
-- 재시작 복구: 오래된 `RUNNING`을 `QUEUED`로 되돌린다
-
-### T6-6. 엔드포인트 26 — `GET /area-search-jobs/{jobId}`
-- 진행 중: `status` + `progress`, `result: null`, `error: null`
-- 성공: `result{durationMin, intersection{type, coordinates, areaKm2, usedPieces}, candidates[...]}`
-- 실패: `error.code` ∈ {`NO_INTERSECTION`, `NO_HUB_FOUND`, `EXTERNAL_UNAVAILABLE`, `ORIGIN_REQUIRED`}
-  - `ORIGIN_REQUIRED`의 두 얼굴 구분(2차 blocker #2): **POST 접수 시점 검증 실패는 HTTP `422 ORIGIN_REQUIRED`** (동기 응답), **접수 후 실행 시점에 좌표가 사라진 불변식 소실은 job의 `FAILED` + `error.code: ORIGIN_REQUIRED`** (비동기 종료 상태). 같은 코드지만 전달 채널이 다르다
-- FE는 2초 간격 폴링 (SSE·푸시 없음 — MVP 완료 기준 10)
+- 기존 P0~P5 API·테이블·테스트를 제거하거나 되돌리지 않는다.
+- 적용된 `V1__baseline.sql`은 수정하지 않고 `V2__candidate_board_phase6.sql`만 추가한다.
+- 신규 P6 기능은 `HOST` 여부를 검사하지 않고 같은 보드의 활성 참여자인지만 검사한다.
+- 기존 코스·투표·출발 안내의 HOST 계약은 이번 단계에서 바꾸지 않는다.
+- 한 참여자는 서로 다른 여러 장소에 좋아요할 수 있고, 같은 장소에는 하나만 가진다.
+- 현재 선택 장소는 보드당 0개 또는 1개이며 모든 참여자가 지정·변경·해제할 수 있다.
+- 선택 충돌은 board 행 잠금 후 마지막 커밋이 이기는 방식으로 처리하고 변경자·시각을 기록한다.
+- 모든 참여자는 기존 참여 코드와 초대 링크를 언제든 조회할 수 있다.
+- 지역 제안은 ODsay, JTS, Kakao Local만 사용하며 TMAP을 호출하지 않는다.
+- 허용 이동 시간은 `30`, `45`, `60`분이다.
+- 장거리 공통 영역 해결, 네이버 링크 해석, 외부 리뷰·별점 수집은 범위 밖이다.
 
 ---
 
-## ✅ 검증 게이트
+## 0. 변경 경계
 
-| # | 항목 | 방법 |
-|---:|---|---|
-| V6-1 | E2E: 생성 → 폴링 → 성공 | 계약 테스트 (16절 6단계). 외부 3종 stub |
-| V6-2 | 교집합 없음 → `NO_INTERSECTION` | 겹치지 않는 폴리곤 stub |
-| V6-3 | 외부 장애 → `EXTERNAL_UNAVAILABLE` | ODsay stub 500 고정 |
-| V6-4 | 허브 없음 → `NO_HUB_FOUND` | Kakao stub 빈 결과 |
-| V6-5 | **활성 작업 중복 불가** | 동시 POST 2건 → 하나 `202`, 하나 `409 JOB_ALREADY_RUNNING` |
-| V6-6 | 출발지 미등록 포함 → `422 ORIGIN_REQUIRED` | |
-| V6-7 | 대상 1명 → `400 INVALID_ARGUMENT` | |
-| V6-8 | **호출량 상한 준수** | 후보 6개 초과 평가 안 함, TMAP 호출 수 ≤ 참여자수×6 |
-| V6-9 | 일부 경로 없음에도 작업 성공 | 한 참여자만 경로 없음 stub → `SUCCEEDED`, `unreachableCount ≥ 1` |
-| V6-10 | JTS 교집합·면적 정확도 | 단위 테스트: 알려진 사각형 2개의 교집합 면적 |
-| V6-11 | 재시작 복구 | `RUNNING` 행을 남기고 재기동 → `QUEUED`로 복구 |
-| V6-12 | 진행률 단계 순서 | `ISOCHRONE → INTERSECTION → HUB_COLLECTION → TRANSIT_EVALUATION` |
-| V6-13 | **snapshot에 좌표 없음** | `area_search_job.snapshot` JSONB에 `lon`/`lat` 키가 존재하지 않음을 assert |
-| V6-16 | **활성 작업 중 출발지 변경 차단** | 작업 활성 상태에서 대상 참여자 `PATCH participants/me` 출발지 변경 → `409 RESOURCE_CONFLICT`, 종료 후 변경 성공 |
-| V6-17 | **동시 POST/PATCH 직렬화** | 지역 찾기 POST와 출발지 PATCH를 동시에 실행 → 하나가 먼저 확정되고, job이 생성됐다면 그 PATCH는 `409`. 두 순서 모두 테스트해 좌표 고정이 깨지지 않음을 검증 (통합 테스트) |
-| V6-18 | **비동기 ORIGIN_REQUIRED** | POST 검증 실패 → 동기 `422 ORIGIN_REQUIRED`. 접수 후 좌표 소실 → job `FAILED` + `error.code: ORIGIN_REQUIRED` |
-| V6-14 | **운영 스모크: ODsay 고정 IP** | 운영 VM에서 실제 ODsay 호출 성공 (I1의 IP 등록 후) |
-| V6-15 | 빌드 그린 | `./gradlew build` |
+### 유지하는 기존 구현
+
+- `domain/vote`, `domain/course`, `domain/departure` 전체
+- `BoardStatus.COLLECTING/CONFIRMED/CLOSED`
+- 기존 보드 생성·수정·종료 계약
+- 기존 댓글 작성자/장소 제안자 소유권 계약
+- `DepartureJobExecutor`, `TmapTransitClient`
+- `V1__baseline.sql`
+
+### P6에서 추가·수정하는 파일
+
+- Modify: `build.gradle.kts` — JTS 의존성 1개 추가
+- Create: `src/main/resources/db/migration/V2__candidate_board_phase6.sql`
+- Modify: `src/main/kotlin/com/siheungbootcamp/teamd/domain/board/Board.kt`
+- Modify: `src/main/kotlin/com/siheungbootcamp/teamd/domain/board/BoardDtos.kt`
+- Modify: `src/main/kotlin/com/siheungbootcamp/teamd/domain/board/BoardController.kt`
+- Modify: `src/main/kotlin/com/siheungbootcamp/teamd/domain/board/BoardService.kt`
+- Modify: `src/main/kotlin/com/siheungbootcamp/teamd/domain/board/BoardRepositories.kt`
+- Create: `src/main/kotlin/com/siheungbootcamp/teamd/domain/place/PlaceLike.kt`
+- Modify: `src/main/kotlin/com/siheungbootcamp/teamd/domain/place/PlaceDtos.kt`
+- Modify: `src/main/kotlin/com/siheungbootcamp/teamd/domain/place/PlaceController.kt`
+- Modify: `src/main/kotlin/com/siheungbootcamp/teamd/domain/place/PlaceRepositories.kt`
+- Modify: `src/main/kotlin/com/siheungbootcamp/teamd/domain/place/PlaceService.kt`
+- Create: `src/main/kotlin/com/siheungbootcamp/teamd/domain/area/AreaSearchJob.kt`
+- Create: `src/main/kotlin/com/siheungbootcamp/teamd/domain/area/AreaCandidate.kt`
+- Create: `src/main/kotlin/com/siheungbootcamp/teamd/domain/area/AreaDtos.kt`
+- Create: `src/main/kotlin/com/siheungbootcamp/teamd/domain/area/AreaRepositories.kt`
+- Create: `src/main/kotlin/com/siheungbootcamp/teamd/domain/area/AreaController.kt`
+- Create: `src/main/kotlin/com/siheungbootcamp/teamd/domain/area/AreaService.kt`
+- Create: `src/main/kotlin/com/siheungbootcamp/teamd/domain/area/AreaJobExecutor.kt`
+- Create: `src/main/kotlin/com/siheungbootcamp/teamd/domain/area/GeometryService.kt`
+- Create: `src/main/kotlin/com/siheungbootcamp/teamd/infra/external/odsay/OdsayIsochroneClient.kt`
+- Create: `src/main/kotlin/com/siheungbootcamp/teamd/infra/external/odsay/OdsayProperties.kt`
+- Modify: `src/main/kotlin/com/siheungbootcamp/teamd/global/config/ExternalApiConfig.kt`
+- Modify: `src/main/kotlin/com/siheungbootcamp/teamd/global/error/ErrorCode.kt`
+- Modify: `src/main/resources/application.yml`
+- Modify: `src/main/resources/application-local.yml`
+- Modify: `src/main/resources/application-prod.yml`
+
+### P6 테스트 파일
+
+- Create: `src/test/kotlin/com/siheungbootcamp/teamd/domain/place/P6CandidateBoardContractTest.kt`
+- Create: `src/test/kotlin/com/siheungbootcamp/teamd/domain/area/GeometryServiceTest.kt`
+- Create: `src/test/kotlin/com/siheungbootcamp/teamd/domain/area/P6AreaContractTest.kt`
+- Create: `src/test/kotlin/com/siheungbootcamp/teamd/infra/external/odsay/OdsayStubServer.kt`
+- Modify: `src/test/kotlin/com/siheungbootcamp/teamd/infra/external/kakao/KakaoStubServer.kt`
+- Modify: `src/test/kotlin/com/siheungbootcamp/teamd/FoundationIntegrationTest.kt`
 
 ---
 
-## 리스크
+### Task 1: 기존 동작 회귀선과 additive migration
 
-| 리스크 | 대응 |
-|---|---|
-| ODsay 고정 IP 미등록으로 운영에서만 실패 | I1에서 IP 등록을 **먼저** 끝내고 V6-14를 배포 직후 수행 |
-| 외부 호출 폭증으로 예산 초과 | `estimatedExternalCalls`를 생성 시점에 계산해 예산 검사, 보드당 3회/시간 제한 |
-| WGS84 좌표로 면적을 계산해 값이 틀림 | V6-10 단위 테스트에 실제 km² 기대값 명시 |
-| 4단계 파이프라인이 한 클래스에 뭉침 | phase별 클래스 분리 + 각 phase 단위 테스트 |
-| 장시간 작업이 트랜잭션을 점유 | 선점·진행률·결과 저장을 **각각 별개 짧은 트랜잭션**으로 |
+**Files:**
+- Create: `src/main/resources/db/migration/V2__candidate_board_phase6.sql`
+- Modify: `src/test/kotlin/com/siheungbootcamp/teamd/FoundationIntegrationTest.kt`
+
+**Interfaces:**
+- Produces: `board.selected_place_id`, `board.selected_by_participant_id`, `board.selected_at`, `place_like`
+- Preserves: V1의 13개 테이블과 모든 FK
+
+- [ ] **Step 1: 현재 전체 테스트로 P0~P5 회귀선 확인**
+
+Run:
+
+```bash
+./gradlew test
+```
+
+Expected: `BUILD SUCCESSFUL`. 실패하면 P6 작업을 시작하지 않고 기존 실패를 별도 기록한다.
+
+- [ ] **Step 2: V2 migration 기대 테스트 작성**
+
+`FoundationIntegrationTest`에 다음 검증을 추가한다.
+
+```kotlin
+@Test
+fun `P6 migration은 기존 테이블을 보존하고 공동 후보 컬럼만 추가한다`() {
+    assertEquals(2, jdbcClient.sql(
+        "select count(*) from flyway_schema_history where success=true"
+    ).query(Int::class.java).single())
+    assertEquals(3, jdbcClient.sql(
+        """
+        select count(*) from information_schema.columns
+        where table_name='board'
+          and column_name in ('selected_place_id','selected_by_participant_id','selected_at')
+        """.trimIndent()
+    ).query(Int::class.java).single())
+    assertEquals(1, jdbcClient.sql(
+        "select count(*) from information_schema.tables where table_name='place_like'"
+    ).query(Int::class.java).single())
+}
+```
+
+- [ ] **Step 3: 테스트 실패 확인**
+
+Run:
+
+```bash
+./gradlew test --tests '*FoundationIntegrationTest'
+```
+
+Expected: migration 개수 또는 신규 컬럼 assertion 실패.
+
+- [ ] **Step 4: V2 migration 추가**
+
+```sql
+alter table board add column selected_place_id bigint references place(id);
+alter table board add column selected_by_participant_id bigint references participant(id);
+alter table board add column selected_at timestamptz;
+
+create table place_like (
+    place_id bigint not null references place(id),
+    participant_id bigint not null references participant(id),
+    created_at timestamptz not null default now(),
+    primary key (place_id, participant_id)
+);
+
+create index idx_place_like_participant on place_like(participant_id);
+```
+
+같은 보드 소속과 `ACTIVE` 장소 여부는 서비스 트랜잭션에서 검증한다. 기존 테이블·컬럼은 삭제하지 않는다.
+
+- [ ] **Step 5: migration 테스트 통과 확인**
+
+Run:
+
+```bash
+./gradlew test --tests '*FoundationIntegrationTest'
+```
+
+Expected: `BUILD SUCCESSFUL`.
+
+- [ ] **Step 6: 커밋**
+
+```bash
+git add src/main/resources/db/migration/V2__candidate_board_phase6.sql src/test/kotlin/com/siheungbootcamp/teamd/FoundationIntegrationTest.kt
+git commit -m "P6 공동 후보 상태를 additive migration으로 준비한다"
+```
+
+---
+
+### Task 2: 공동 좋아요·현재 선택·초대 재확인
+
+**Files:**
+- Create: `src/main/kotlin/com/siheungbootcamp/teamd/domain/place/PlaceLike.kt`
+- Modify: `src/main/kotlin/com/siheungbootcamp/teamd/domain/place/PlaceDtos.kt`
+- Modify: `src/main/kotlin/com/siheungbootcamp/teamd/domain/place/PlaceController.kt`
+- Modify: `src/main/kotlin/com/siheungbootcamp/teamd/domain/place/PlaceRepositories.kt`
+- Modify: `src/main/kotlin/com/siheungbootcamp/teamd/domain/place/PlaceService.kt`
+- Modify: `src/main/kotlin/com/siheungbootcamp/teamd/domain/board/Board.kt`
+- Modify: `src/main/kotlin/com/siheungbootcamp/teamd/domain/board/BoardDtos.kt`
+- Modify: `src/main/kotlin/com/siheungbootcamp/teamd/domain/board/BoardController.kt`
+- Modify: `src/main/kotlin/com/siheungbootcamp/teamd/domain/board/BoardService.kt`
+- Modify: `src/main/kotlin/com/siheungbootcamp/teamd/domain/board/BoardRepositories.kt`
+- Test: `src/test/kotlin/com/siheungbootcamp/teamd/domain/place/P6CandidateBoardContractTest.kt`
+
+**Interfaces:**
+- Produces: `PUT/DELETE /api/v1/boards/{boardId}/places/{placeId}/likes/me`
+- Produces: `PUT/DELETE /api/v1/boards/{boardId}/selected-place`
+- Changes: `GET /api/v1/boards/{boardId}/invitation` 권한을 HOST에서 같은 보드 참여자로 완화
+- Produces response fields: `likeCount`, `likedByMe`, `selected`, `selectedByParticipantId`, `selectedAt`
+
+- [ ] **Step 1: HTTP 계약 실패 테스트 작성**
+
+테스트는 아래 시나리오를 각각 독립 테스트로 만든다.
+
+```kotlin
+@Test
+fun `한 참여자는 서로 다른 두 장소에 좋아요할 수 있고 같은 요청은 멱등적이다`() {
+    putLike(memberToken, placeA).andExpect { status { isNoContent() } }
+    putLike(memberToken, placeA).andExpect { status { isNoContent() } }
+    putLike(memberToken, placeB).andExpect { status { isNoContent() } }
+    assertPlace(memberToken, placeA, likeCount = 1, likedByMe = true)
+    assertPlace(memberToken, placeB, likeCount = 1, likedByMe = true)
+}
+
+@Test
+fun `일반 참여자가 선택 장소를 바꾸고 해제할 수 있다`() {
+    select(memberToken, placeA).andExpect { status { isOk() } }
+    select(otherMemberToken, placeB).andExpect { status { isOk() } }
+    assertSelected(placeB, changedBy = otherMemberId)
+    clearSelection(memberToken).andExpect { status { isNoContent() } }
+}
+
+@Test
+fun `일반 참여자가 초대 코드를 다시 조회할 수 있다`() {
+    mockMvc.get("/api/v1/boards/$boardId/invitation") {
+        bearer(memberToken)
+    }.andExpect {
+        status { isOk() }
+        jsonPath("$.inviteCode") { value(inviteCode) }
+    }
+}
+```
+
+- [ ] **Step 2: 신규 계약이 실패하는지 확인**
+
+Run:
+
+```bash
+./gradlew test --tests '*P6CandidateBoardContractTest'
+```
+
+Expected: endpoint 없음 또는 `403`.
+
+- [ ] **Step 3: 저장 모델과 repository 구현**
+
+`PlaceLike`는 복합 키 대신 단순 엔티티 ID를 새로 만들지 않는다. Spring Data repository는 아래 연산만 노출한다.
+
+```kotlin
+@Embeddable
+data class PlaceLikeId(
+    @Column(name = "place_id") val placeId: Long = 0,
+    @Column(name = "participant_id") val participantId: Long = 0,
+)
+
+@Entity
+@Table(name = "place_like")
+class PlaceLike(
+    @EmbeddedId val id: PlaceLikeId,
+)
+
+interface PlaceLikeRepository : JpaRepository<PlaceLike, PlaceLikeId> {
+    fun existsByPlaceIdAndParticipantId(placeId: Long, participantId: Long): Boolean
+    fun countByPlaceId(placeId: Long): Long
+    fun deleteByPlaceIdAndParticipantId(placeId: Long, participantId: Long): Long
+}
+```
+
+`Board`에는 의도가 드러나는 변경 메서드만 추가한다.
+
+```kotlin
+fun select(placeId: Long, participantId: Long, now: Instant) {
+    selectedPlaceId = placeId
+    selectedByParticipantId = participantId
+    selectedAt = now
+}
+
+fun clearSelection(participantId: Long, now: Instant) {
+    selectedPlaceId = null
+    selectedByParticipantId = participantId
+    selectedAt = now
+}
+```
+
+`BoardRepository`에는 `findByPublicIdForUpdate`를 추가해 선택 변경을 직렬화한다.
+
+- [ ] **Step 4: 서비스 권한과 endpoint 구현**
+
+신규 P6 서비스 메서드에서 공통으로 다음 조건만 검사한다.
+
+```kotlin
+private fun requireBoardParticipant(boardId: String, principal: ParticipantPrincipal) {
+    if (principal.boardId != boardId) {
+        throw BusinessException(ErrorCode.FORBIDDEN)
+    }
+}
+```
+
+- 좋아요 PUT은 이미 존재하면 그대로 성공한다.
+- 좋아요 DELETE는 없어도 성공한다.
+- 선택 PUT은 board 행 잠금 후 같은 보드의 `ACTIVE` 장소인지 검사한다.
+- 선택 DELETE는 board 행 잠금 후 항상 변경자·시각을 기록한다.
+- invitation 조회에서는 기존 `requireHost` 호출만 제거하고 보드 일치 검사는 유지한다.
+- 기존 P0~P5 endpoint의 HOST 검사는 바꾸지 않는다.
+
+- [ ] **Step 5: 계약 테스트 통과 확인**
+
+Run:
+
+```bash
+./gradlew test --tests '*P6CandidateBoardContractTest' --tests '*P1ContractTest' --tests '*PlaceContractTest'
+```
+
+Expected: 신규 테스트와 기존 보드·장소 계약 모두 통과.
+
+- [ ] **Step 6: 커밋**
+
+```bash
+git add src/main/kotlin/com/siheungbootcamp/teamd/domain/board src/main/kotlin/com/siheungbootcamp/teamd/domain/place src/test/kotlin/com/siheungbootcamp/teamd/domain/place/P6CandidateBoardContractTest.kt
+git commit -m "P6 후보 좋아요와 공동 선택을 추가한다"
+```
+
+---
+
+### Task 3: JTS 교집합과 ODsay 도달권 어댑터
+
+**Files:**
+- Modify: `build.gradle.kts`
+- Create: `src/main/kotlin/com/siheungbootcamp/teamd/domain/area/GeometryService.kt`
+- Create: `src/main/kotlin/com/siheungbootcamp/teamd/infra/external/odsay/OdsayIsochroneClient.kt`
+- Create: `src/main/kotlin/com/siheungbootcamp/teamd/infra/external/odsay/OdsayProperties.kt`
+- Modify: `src/main/kotlin/com/siheungbootcamp/teamd/global/config/ExternalApiConfig.kt`
+- Modify: `src/main/resources/application.yml`
+- Modify: `src/main/resources/application-local.yml`
+- Modify: `src/main/resources/application-prod.yml`
+- Test: `src/test/kotlin/com/siheungbootcamp/teamd/domain/area/GeometryServiceTest.kt`
+- Test: `src/test/kotlin/com/siheungbootcamp/teamd/infra/external/odsay/OdsayStubServer.kt`
+
+**Interfaces:**
+- Produces: `OdsayIsochroneClient.fetch(lon: Double, lat: Double, durationMin: Int): Geometry`
+- Produces: `GeometryService.intersectLargest(inputs: List<Geometry>, limit: Int = 3): List<Geometry>`
+- Produces: `GeometryService.contains(area: Geometry, lon: Double, lat: Double): Boolean`
+
+- [ ] **Step 1: GeometryService 실패 테스트 작성**
+
+```kotlin
+@Test
+fun `두 도달권의 교집합에서 면적이 큰 조각 세 개까지만 반환한다`() {
+    val result = service.intersectLargest(listOf(leftMultiPolygon, rightPolygon), limit = 3)
+    assertTrue(result.size <= 3)
+    assertTrue(result.zipWithNext().all { (a, b) -> a.area >= b.area })
+    assertTrue(result.all { it.isValid && !it.isEmpty })
+}
+```
+
+면적은 EPSG:5179 투영 또는 검증된 구면 면적 계산 중 하나만 선택한다. 단순 `geometry.area`를 km²로 표기하지 않는다.
+
+- [ ] **Step 2: 테스트 실패 확인**
+
+Run:
+
+```bash
+./gradlew test --tests '*GeometryServiceTest'
+```
+
+Expected: JTS 의존성 또는 클래스 없음으로 실패.
+
+- [ ] **Step 3: JTS와 GeometryService 구현**
+
+`build.gradle.kts`:
+
+```kotlin
+implementation("org.locationtech.jts:jts-core:1.20.0")
+```
+
+서비스는 입력을 `GeometryFixer.fix`, `buffer(0)` 순으로 정규화하고 `reduce(Geometry::intersection)` 후 polygon 조각을 면적 내림차순으로 반환한다.
+
+- [ ] **Step 4: ODsay stub 계약 테스트 작성**
+
+정확한 요청은 다음으로 고정한다.
+
+```text
+GET /v1/api/searchPubTransIsochrone
+  ?x={lon}
+  &y={lat}
+  &searchTime={30|45|60}
+  &searchMethod=4
+  &apiKey={server-side-key}
+```
+
+테스트는 `200 Polygon`, `200 MultiPolygon`, `429 후 성공`, `500 재시도 소진`, malformed body를 검증한다.
+
+- [ ] **Step 5: ODsay client와 설정 구현**
+
+`ExternalApiConfig`에 ODSAY quota/client를 추가하되 기존 Kakao/TMAP bean을 변경하지 않는다. `apiKey`는 환경변수 `ODSAY_API_KEY`로만 주입한다.
+
+- [ ] **Step 6: 단위 테스트 통과 확인**
+
+Run:
+
+```bash
+./gradlew test --tests '*GeometryServiceTest' --tests '*Odsay*'
+```
+
+Expected: `BUILD SUCCESSFUL`.
+
+- [ ] **Step 7: 커밋**
+
+```bash
+git add build.gradle.kts src/main/kotlin/com/siheungbootcamp/teamd/domain/area/GeometryService.kt src/main/kotlin/com/siheungbootcamp/teamd/infra/external/odsay src/main/kotlin/com/siheungbootcamp/teamd/global/config/ExternalApiConfig.kt src/main/resources src/test/kotlin/com/siheungbootcamp/teamd/domain/area/GeometryServiceTest.kt src/test/kotlin/com/siheungbootcamp/teamd/infra/external/odsay
+git commit -m "P6 ODsay 도달권과 JTS 교집합을 검증한다"
+```
+
+---
+
+### Task 4: 단순화된 지역 제안 작업
+
+**Files:**
+- Create: `src/main/kotlin/com/siheungbootcamp/teamd/domain/area/AreaSearchJob.kt`
+- Create: `src/main/kotlin/com/siheungbootcamp/teamd/domain/area/AreaCandidate.kt`
+- Create: `src/main/kotlin/com/siheungbootcamp/teamd/domain/area/AreaDtos.kt`
+- Create: `src/main/kotlin/com/siheungbootcamp/teamd/domain/area/AreaRepositories.kt`
+- Create: `src/main/kotlin/com/siheungbootcamp/teamd/domain/area/AreaController.kt`
+- Create: `src/main/kotlin/com/siheungbootcamp/teamd/domain/area/AreaService.kt`
+- Create: `src/main/kotlin/com/siheungbootcamp/teamd/domain/area/AreaJobExecutor.kt`
+- Modify: `src/main/kotlin/com/siheungbootcamp/teamd/global/error/ErrorCode.kt`
+- Modify: `src/test/kotlin/com/siheungbootcamp/teamd/infra/external/kakao/KakaoStubServer.kt`
+- Test: `src/test/kotlin/com/siheungbootcamp/teamd/domain/area/P6AreaContractTest.kt`
+
+**Interfaces:**
+- Produces: `POST /api/v1/boards/{boardId}/area-search-jobs`
+- Produces: `GET /api/v1/boards/{boardId}/area-search-jobs/{jobId}`
+- Consumes: `JobExecutor`, `OriginCipher`, `OdsayIsochroneClient`, `GeometryService`, `KakaoLocalClient.searchKeyword`
+- Reuses: V1의 `area_search_job`, `area_candidate`
+
+- [ ] **Step 1: 비동기 계약 실패 테스트 작성**
+
+아래 테스트를 우선 작성한다.
+
+```kotlin
+@Test
+fun `일반 참여자가 지역 제안을 시작하고 폴링해 세 개 이하 결과를 받는다`() {
+    postArea(memberToken, 45).andExpect {
+        status { isAccepted() }
+        header { exists("Location") }
+        jsonPath("$.estimatedExternalCalls.odsay") { value(2) }
+        jsonPath("$.estimatedExternalCalls.tmapTransit") { value(0) }
+    }
+    runExecutorUntilIdle()
+    getArea(memberToken, jobId).andExpect {
+        status { isOk() }
+        jsonPath("$.status") { value("SUCCEEDED") }
+        jsonPath("$.result.candidates.length()") { value(3) }
+    }
+    assertEquals(0, tmapStub.requestCount)
+}
+```
+
+추가 테스트:
+
+- 출발지 누락 → 동기 `422 ORIGIN_REQUIRED`
+- 참여자 1명 → `400 INVALID_ARGUMENT`
+- 같은 입력의 활성 작업 → 기존 `jobId` 재사용
+- 교집합 없음 → job `FAILED`, `NO_INTERSECTION`
+- Kakao 기준점 없음 → job `FAILED`, `NO_AREA_ANCHOR`
+- ODsay 실패 → job `FAILED`, `EXTERNAL_UNAVAILABLE`
+- 모든 단계에서 TMAP 호출 0회
+
+- [ ] **Step 2: 실패 확인**
+
+Run:
+
+```bash
+./gradlew test --tests '*P6AreaContractTest'
+```
+
+Expected: area controller/executor 없음으로 실패.
+
+- [ ] **Step 3: POST 접수 서비스 구현**
+
+검증 순서:
+
+1. `principal.boardId == boardId`
+2. `durationMin in setOf(30, 45, 60)`
+3. 활성 참여자 2명 이상
+4. 대상 참여자 ID 오름차순 `FOR UPDATE`
+5. 모든 대상의 `originCiphertext` 존재
+6. 같은 보드 활성 job이 있으면 새 외부 호출 없이 그 job 반환
+7. snapshot에는 `participantIds`만 저장하고 좌표·검색어는 저장하지 않음
+
+응답:
+
+```json
+{
+  "jobId": "job_...",
+  "status": "QUEUED",
+  "estimatedExternalCalls": {
+    "odsay": 2,
+    "kakaoLocal": 3,
+    "tmapTransit": 0
+  }
+}
+```
+
+- [ ] **Step 4: 3단계 executor 구현**
+
+| phase | 동작 | 외부 호출 |
+|---|---|---:|
+| `ISOCHRONE` | 참여자별 도달권 조회 | ODsay N회 |
+| `INTERSECTION` | 교집합·면적 상위 3조각 | 0회 |
+| `AREA_ANCHOR_COLLECTION` | 조각 centroid 주변 `"역"`, `"맛집"`, `"카페"` 검색 후 조각 내부·중복 제거 | Kakao 최대 9회 |
+
+TMAP phase, 평균 이동시간, 최대 이동시간, 환승 수, 공정성 점수는 구현하지 않는다.
+
+`area_candidate.metrics`에는 호환을 위해 다음 최소 값만 저장한다.
+
+```json
+{
+  "pieceIndex": 0,
+  "intersectionAreaKm2": 3.14
+}
+```
+
+`reasons`에는 `"공통 도달 영역 안의 탐색 기준점"` 한 문장만 저장한다. `rank`는 면적 조각 순서와 검색 결과 안정 순서를 조합한 화면 표시 순서다.
+
+- [ ] **Step 5: 재시도·복구 경계를 기존 JobExecutor 방식에 맞춤**
+
+- 외부 호출 중 DB transaction을 유지하지 않는다.
+- ODsay/Kakao의 `429`, `5xx`만 최대 3회 재시도한다.
+- 오래된 `RUNNING`은 애플리케이션 시작 또는 첫 poll에서 `QUEUED`로 되돌린다.
+- phase 종료마다 `progress`를 짧은 transaction으로 저장한다.
+- 원문 외부 응답, API key, 출발 좌표를 일반 로그에 남기지 않는다.
+
+- [ ] **Step 6: 계약 테스트 통과 확인**
+
+Run:
+
+```bash
+./gradlew test --tests '*P6AreaContractTest' --tests '*GeometryServiceTest' --tests '*Odsay*'
+```
+
+Expected: `BUILD SUCCESSFUL`, TMAP request count 0.
+
+- [ ] **Step 7: 커밋**
+
+```bash
+git add src/main/kotlin/com/siheungbootcamp/teamd/domain/area src/main/kotlin/com/siheungbootcamp/teamd/global/error/ErrorCode.kt src/test/kotlin/com/siheungbootcamp/teamd/domain/area src/test/kotlin/com/siheungbootcamp/teamd/infra/external/kakao/KakaoStubServer.kt
+git commit -m "P6 지역 탐색 fallback을 ODsay와 Kakao로 완성한다"
+```
+
+---
+
+### Task 5: 전체 회귀·외부 API 비용 경계·문서 완료
+
+**Files:**
+- Modify: `docs/plan/07-phase6-area-search.md` — 체크박스와 실측 결과만 갱신
+- No production code unless a failing verification proves it is necessary
+
+**Interfaces:**
+- Verifies: P0~P5 preservation and P6 completion
+
+- [ ] **Step 1: 정적 비용 경계 확인**
+
+Run:
+
+```bash
+rg -n "TmapTransitClient|TRANSIT_EVALUATION|avgSeconds|maxSeconds|unreachableCount" src/main/kotlin/com/siheungbootcamp/teamd/domain/area
+```
+
+Expected: 결과 0건.
+
+- [ ] **Step 2: P6 핵심 테스트 실행**
+
+```bash
+./gradlew test --tests '*P6CandidateBoardContractTest' --tests '*P6AreaContractTest' --tests '*GeometryServiceTest' --tests '*Odsay*'
+```
+
+Expected: `BUILD SUCCESSFUL`.
+
+- [ ] **Step 3: 기존 Phase 회귀 테스트 실행**
+
+```bash
+./gradlew test --tests '*P1ContractTest' --tests '*PlaceContractTest' --tests '*P3CommentContractTest' --tests '*P3VoteContractTest' --tests '*P4CourseContractTest' --tests '*P5DepartureContractTest'
+```
+
+Expected: `BUILD SUCCESSFUL`. 기존 HOST·투표·코스·출발 계약이 깨지지 않아야 한다.
+
+- [ ] **Step 4: 전체 빌드**
+
+```bash
+./gradlew build
+```
+
+Expected: `BUILD SUCCESSFUL`.
+
+- [ ] **Step 5: 운영 ODsay smoke**
+
+운영 고정 IP가 등록된 VM에서 참여자 2명, 45분으로 작업을 1회 실행한다.
+
+검증:
+
+- ODsay 응답 200
+- Kakao 기준점 1개 이상
+- TMAP 호출 증가량 0
+- 로그에 API key와 출발 좌표 원문 없음
+
+운영 키 또는 고정 IP가 준비되지 않았다면 로컬 stub 검증 완료를 기록하고 이 항목만 `Not-tested`로 남긴다. 구현 완료를 가짜로 표시하지 않는다.
+
+- [ ] **Step 6: 최종 커밋**
+
+```bash
+git add docs/plan/07-phase6-area-search.md
+git commit -m "P6 검증 결과와 외부 API 비용 경계를 기록한다"
+```
+
+---
+
+## P6 완료 조건
+
+1. 기존 P0~P5 전체 테스트가 그대로 통과한다.
+2. 일반 참여자가 여러 장소에 좋아요할 수 있다.
+3. 일반 참여자가 현재 선택 장소를 지정·변경·해제할 수 있다.
+4. 마지막 선택 변경자와 시각이 조회된다.
+5. 일반 참여자가 참여 코드와 초대 링크를 다시 조회할 수 있다.
+6. 일반 참여자가 지역 제안 작업을 시작할 수 있다.
+7. 지역 제안은 1~3개 탐색 기준점을 반환한다.
+8. P6 area 패키지에서 TMAP 호출은 0회다.
+9. 장거리·네이버 링크·리뷰 수집은 구현하지 않는다.
+
+## 명시적으로 하지 않는 것
+
+- P0~P5 코드 삭제 또는 이전 migration 수정
+- 기존 `HOST` 역할과 과거 API의 일괄 제거
+- 기존 투표·코스·출발 안내 endpoint 비활성화
+- Redis, Kafka, 별도 worker, WebSocket
+- 실시간 선택 변경 이벤트
+- 이동시간 공정성 순위
+- 참여자×후보 TMAP 전수 계산
+- 네이버 자동 링크 해석
+- 서울–부산 장거리 해법
