@@ -21,6 +21,11 @@ import org.springframework.web.servlet.support.ServletUriComponentsBuilder
  * 32: GET /departure-guide - 현재 계산 상태 조회
  * 33: POST /departure-calculations - 계산 요청 (비동기, 202 Accepted 반환)
  */
+@org.springframework.boot.autoconfigure.condition.ConditionalOnProperty(
+    prefix = "app",
+    name = "legacy-api-enabled",
+    havingValue = "true",
+)
 @RestController
 @RequestMapping("/api/v1/boards/{boardId}/participants/me")
 @Tag(name = "Departure", description = "개인 출발 안내")

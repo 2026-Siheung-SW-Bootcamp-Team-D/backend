@@ -25,6 +25,11 @@ import jakarta.validation.Valid
  * 기존 엔드포인트는 하위 호환성을 위해 유지되며, 새로운 개발에서는 사용하지 않습니다.
  */
 @Deprecated(message = "투표 기능은 P6의 후보 장소 기반 흐름으로 대체되었습니다. 새로운 개발에서는 사용하지 않습니다.")
+@org.springframework.boot.autoconfigure.condition.ConditionalOnProperty(
+    prefix = "app",
+    name = "legacy-api-enabled",
+    havingValue = "true",
+)
 @RestController
 @RequestMapping("/api/v1/boards/{boardId}/votes")
 @Tag(name = "Votes", description = "장소 투표")

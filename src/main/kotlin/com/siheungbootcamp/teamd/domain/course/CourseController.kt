@@ -25,6 +25,11 @@ import org.springframework.web.bind.annotation.*
 import java.net.URI
 
 /** P4 HTTP 요청을 검증하고 애플리케이션 서비스 결과를 API 명세 형태로 반환한다. */
+@org.springframework.boot.autoconfigure.condition.ConditionalOnProperty(
+    prefix = "app",
+    name = "legacy-api-enabled",
+    havingValue = "true",
+)
 @RestController
 @RequestMapping("/api/v1")
 @EnableConfigurationProperties(BoardProperties::class)
