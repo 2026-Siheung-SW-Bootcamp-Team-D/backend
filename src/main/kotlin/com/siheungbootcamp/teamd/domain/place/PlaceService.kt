@@ -124,7 +124,7 @@ class PlaceService(
         val saved = places.save(place)
         val placeId_internal = saved.id ?: throw BusinessException(ErrorCode.INTERNAL_ERROR)
         val commentCount = comments.countByPlaceIdAndNotDeleted(placeId_internal).toInt()
-        return toResponse(saved, commentCount, 0, false)
+        return toResponse(saved, commentCount, 0, false, false)
     }
 
     fun get(boardId: String, placeId: String, principal: ParticipantPrincipal): PlaceResponse {
@@ -139,7 +139,8 @@ class PlaceService(
         val commentCount = comments.countByPlaceIdAndNotDeleted(placeId_internal).toInt()
         val likeCount = likes.countByPlaceId(placeId_internal).toInt()
         val likedByMe = likes.existsByPlaceIdAndParticipantId(placeId_internal, principal.participantId)
-        return toResponse(place, commentCount, likeCount, likedByMe)
+        val isSelected = placeId_internal == board.selectedPlaceId
+        return toResponse(place, commentCount, likeCount, likedByMe, isSelected)
     }
 
     fun list(
@@ -175,15 +176,33 @@ class PlaceService(
             emptyMap()
         }
 
-        // 좋아요 수는 각각 기본값 0으로 제공 (P6 전반 좋아요 미지원 시까지)
+        // N+1 방지: 한 번의 쿼리로 모든 장소의 좋아요 수를 집계
+        val likeCounts = if (placeIds.isNotEmpty()) {
+            likes.countLikesByPlaceIds(placeIds).associate { row ->
+                val placeId = row[0] as Long
+                val count = row[1] as Long
+                placeId to count
+            }
+        } else {
+            emptyMap()
+        }
+
+        // N+1 방지: 한 번의 쿼리로 현재 사용자가 좋아요한 장소들을 조회
+        val likedPlaceIds = if (placeIds.isNotEmpty()) {
+            likes.findLikedPlaceIdsByParticipantId(placeIds, principal.participantId).toSet()
+        } else {
+            emptySet()
+        }
+
         return PageResponse(
             items = page.content.map { place ->
-                val placeId = place.id ?: return@map toResponse(place, 0)
+                val placeId = place.id ?: return@map toResponse(place, 0, 0, false, false)
                 toResponse(
                     place,
                     (commentCounts[placeId] ?: 0L).toInt(),
-                    0,
-                    false
+                    (likeCounts[placeId] ?: 0L).toInt(),
+                    likedPlaceIds.contains(placeId),
+                    placeId == board.selectedPlaceId
                 )
             },
             page = PageResponse.PageMetadata(
@@ -232,7 +251,7 @@ class PlaceService(
         places.save(place)
     }
 
-    private fun toResponse(place: Place, commentCount: Int, likeCount: Int = 0, likedByMe: Boolean = false): PlaceResponse {
+    private fun toResponse(place: Place, commentCount: Int, likeCount: Int = 0, likedByMe: Boolean = false, selected: Boolean = false): PlaceResponse {
         return PlaceResponse(
             placeId = place.publicId,
             name = place.name,
@@ -250,6 +269,7 @@ class PlaceService(
             createdAt = place.createdAt,
             likeCount = likeCount,
             likedByMe = likedByMe,
+            selected = selected,
         )
     }
 

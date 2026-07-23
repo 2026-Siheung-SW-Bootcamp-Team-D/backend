@@ -47,4 +47,27 @@ interface PlaceLikeRepository : JpaRepository<PlaceLike, PlaceLikeId> {
     @Modifying
     @Query("delete from PlaceLike pl where pl.id.placeId = :placeId and pl.id.participantId = :participantId")
     fun deleteByPlaceIdAndParticipantId(@Param("placeId") placeId: Long, @Param("participantId") participantId: Long): Long
+
+    /**
+     * N+1 방지: 한 번의 쿼리로 여러 장소의 좋아요 수를 집계한다.
+     * 결과는 [placeId, count] 튜플 배열로 반환된다.
+     */
+    @Query("""
+        SELECT pl.id.placeId, COUNT(pl) FROM PlaceLike pl
+        WHERE pl.id.placeId IN :placeIds
+        GROUP BY pl.id.placeId
+    """)
+    fun countLikesByPlaceIds(@Param("placeIds") placeIds: List<Long>): List<Array<Any>>
+
+    /**
+     * N+1 방지: 한 번의 쿼리로 특정 참여자가 좋아요한 장소들의 ID를 조회한다.
+     */
+    @Query("""
+        SELECT pl.id.placeId FROM PlaceLike pl
+        WHERE pl.id.placeId IN :placeIds AND pl.id.participantId = :participantId
+    """)
+    fun findLikedPlaceIdsByParticipantId(
+        @Param("placeIds") placeIds: List<Long>,
+        @Param("participantId") participantId: Long
+    ): List<Long>
 }

@@ -212,6 +212,139 @@ class P6CandidateBoardContractTest(
             .andExpect { jsonPath("$.inviteCode") { value(host.inviteCode) } }
     }
 
+    @Test
+    fun `장소 목록은 여러 참여자의 좋아요 수와 내 좋아요 여부를 정확히 표시한다`() {
+        val host = createBoard("목록 좋아요 보드", "호스트")
+        val member1 = joinBoard(host.inviteCode, "멤버1")
+        val member2 = joinBoard(host.inviteCode, "멤버2")
+        val placeA = createPlace(host.boardId, host.token, "장소 A")
+        val placeB = createPlace(host.boardId, host.token, "장소 B")
+
+        // 호스트와 멤버1이 장소 A를 좋아함
+        mockMvc.put("/api/v1/boards/${host.boardId}/places/$placeA/likes/me") {
+            bearer(host.token)
+        }.andExpect { status { isNoContent() } }
+
+        mockMvc.put("/api/v1/boards/${host.boardId}/places/$placeA/likes/me") {
+            bearer(member1.token)
+        }.andExpect { status { isNoContent() } }
+
+        // 호스트만 장소 B를 좋아함
+        mockMvc.put("/api/v1/boards/${host.boardId}/places/$placeB/likes/me") {
+            bearer(host.token)
+        }.andExpect { status { isNoContent() } }
+
+        // 호스트 목록 조회: placeA 2개, placeB 1개
+        val hostListResult = mockMvc.get("/api/v1/boards/${host.boardId}/places") {
+            bearer(host.token)
+        }.andExpect { status { isOk() } }
+            .andReturn().response.contentAsString
+
+        val hostListJson = objectMapper.readTree(hostListResult)
+        val hostItems = hostListJson.path("items")
+        val hostPlaceA = hostItems.find { it.path("placeId").asText() == placeA }!!
+        val hostPlaceB = hostItems.find { it.path("placeId").asText() == placeB }!!
+
+        assertEquals(2, hostPlaceA.path("likeCount").asInt(), "호스트 보기: 장소 A 좋아요 2개")
+        assertTrue(hostPlaceA.path("likedByMe").asBoolean(), "호스트 보기: 장소 A 내가 좋아요")
+        assertEquals(1, hostPlaceB.path("likeCount").asInt(), "호스트 보기: 장소 B 좋아요 1개")
+        assertTrue(hostPlaceB.path("likedByMe").asBoolean(), "호스트 보기: 장소 B 내가 좋아요")
+
+        // 멤버1 목록 조회: placeA 2개, placeB 0개
+        val member1ListResult = mockMvc.get("/api/v1/boards/${host.boardId}/places") {
+            bearer(member1.token)
+        }.andExpect { status { isOk() } }
+            .andReturn().response.contentAsString
+
+        val member1ListJson = objectMapper.readTree(member1ListResult)
+        val member1Items = member1ListJson.path("items")
+        val member1PlaceA = member1Items.find { it.path("placeId").asText() == placeA }!!
+        val member1PlaceB = member1Items.find { it.path("placeId").asText() == placeB }!!
+
+        assertEquals(2, member1PlaceA.path("likeCount").asInt(), "멤버1 보기: 장소 A 좋아요 2개")
+        assertTrue(member1PlaceA.path("likedByMe").asBoolean(), "멤버1 보기: 장소 A 내가 좋아요")
+        assertEquals(1, member1PlaceB.path("likeCount").asInt(), "멤버1 보기: 장소 B 좋아요 1개")
+        assertEquals(false, member1PlaceB.path("likedByMe").asBoolean(), "멤버1 보기: 장소 B 내가 좋아요 안 함")
+
+        // 멤버2 목록 조회: placeA 0개, placeB 0개
+        val member2ListResult = mockMvc.get("/api/v1/boards/${host.boardId}/places") {
+            bearer(member2.token)
+        }.andExpect { status { isOk() } }
+            .andReturn().response.contentAsString
+
+        val member2ListJson = objectMapper.readTree(member2ListResult)
+        val member2Items = member2ListJson.path("items")
+        val member2PlaceA = member2Items.find { it.path("placeId").asText() == placeA }!!
+        val member2PlaceB = member2Items.find { it.path("placeId").asText() == placeB }!!
+
+        assertEquals(2, member2PlaceA.path("likeCount").asInt(), "멤버2 보기: 장소 A 좋아요 2개")
+        assertEquals(false, member2PlaceA.path("likedByMe").asBoolean(), "멤버2 보기: 장소 A 내가 좋아요 안 함")
+        assertEquals(1, member2PlaceB.path("likeCount").asInt(), "멤버2 보기: 장소 B 좋아요 1개")
+        assertEquals(false, member2PlaceB.path("likedByMe").asBoolean(), "멤버2 보기: 장소 B 내가 좋아요 안 함")
+    }
+
+    @Test
+    fun `장소 목록에서 selected 필드는 보드의 현재 선택된 장소에만 true다`() {
+        val host = createBoard("목록 선택 보드", "호스트")
+        val member = joinBoard(host.inviteCode, "멤버")
+        val placeA = createPlace(host.boardId, host.token, "장소 A")
+        val placeB = createPlace(host.boardId, host.token, "장소 B")
+
+        // 초기 상태: 아무도 선택하지 않음
+        var listResult = mockMvc.get("/api/v1/boards/${host.boardId}/places") {
+            bearer(host.token)
+        }.andExpect { status { isOk() } }
+            .andReturn().response.contentAsString
+
+        var listJson = objectMapper.readTree(listResult)
+        var items = listJson.path("items")
+        items.forEach { item ->
+            assertEquals(false, item.path("selected").asBoolean(), "선택 전: 모든 장소 selected=false")
+        }
+
+        // 멤버가 장소 A를 선택
+        mockMvc.put("/api/v1/boards/${host.boardId}/selected-place") {
+            bearer(member.token)
+            contentType = MediaType.APPLICATION_JSON
+            content = """{"placeId": "$placeA"}"""
+        }.andExpect { status { isOk() } }
+
+        // 호스트 목록 조회: placeA만 selected=true
+        listResult = mockMvc.get("/api/v1/boards/${host.boardId}/places") {
+            bearer(host.token)
+        }.andExpect { status { isOk() } }
+            .andReturn().response.contentAsString
+
+        listJson = objectMapper.readTree(listResult)
+        items = listJson.path("items")
+        val selectedPlaceA = items.find { it.path("placeId").asText() == placeA }!!
+        val selectedPlaceB = items.find { it.path("placeId").asText() == placeB }!!
+
+        assertTrue(selectedPlaceA.path("selected").asBoolean(), "선택된 장소 A는 selected=true")
+        assertEquals(false, selectedPlaceB.path("selected").asBoolean(), "선택되지 않은 장소 B는 selected=false")
+
+        // 멤버가 장소 B로 선택 변경
+        mockMvc.put("/api/v1/boards/${host.boardId}/selected-place") {
+            bearer(member.token)
+            contentType = MediaType.APPLICATION_JSON
+            content = """{"placeId": "$placeB"}"""
+        }.andExpect { status { isOk() } }
+
+        // 호스트 목록 조회: placeB만 selected=true
+        listResult = mockMvc.get("/api/v1/boards/${host.boardId}/places") {
+            bearer(host.token)
+        }.andExpect { status { isOk() } }
+            .andReturn().response.contentAsString
+
+        listJson = objectMapper.readTree(listResult)
+        items = listJson.path("items")
+        val rePlaceA = items.find { it.path("placeId").asText() == placeA }!!
+        val rePlaceB = items.find { it.path("placeId").asText() == placeB }!!
+
+        assertEquals(false, rePlaceA.path("selected").asBoolean(), "선택 해제된 장소 A는 selected=false")
+        assertTrue(rePlaceB.path("selected").asBoolean(), "새로 선택된 장소 B는 selected=true")
+    }
+
     data class TestBoardContext(
         val boardId: String,
         val participantId: String,
