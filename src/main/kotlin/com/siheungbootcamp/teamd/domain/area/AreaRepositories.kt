@@ -68,17 +68,23 @@ interface AreaSearchJobRepository : JpaRepository<AreaSearchJob, Long> {
 }
 
 /**
- * 지역 탐색 결과 후보(AreaCandidate) 저장소.
+ * P7 Task 4: 지역 탐색 결과 제안(AreaSuggestion) 저장소.
+ * 기존 AreaCandidateRepository에서 이름을 바꾼 저장소.
  */
 @Repository
-interface AreaCandidateRepository : JpaRepository<AreaCandidate, Long> {
+interface AreaSuggestionRepository : JpaRepository<AreaSuggestion, Long> {
     /**
-     * 작업 ID로 후보들을 조회한다.
+     * 작업 ID로 제안들을 조회한다.
      */
-    fun findByJobIdOrderByRankAsc(jobId: Long): List<AreaCandidate>
+    fun findByJobIdOrderByRankAsc(jobId: Long): List<AreaSuggestion>
 
     /**
-     * 공개 ID로 후보를 조회한다.
+     * 공개 ID로 제안을 조회한다.
      */
-    fun findByPublicId(publicId: String): AreaCandidate?
+    fun findByPublicId(publicId: String): AreaSuggestion?
 }
+
+/**
+ * Legacy: AreaCandidateRepository는 호환성을 위해 별칭으로 제공한다.
+ */
+typealias AreaCandidateRepository = AreaSuggestionRepository
