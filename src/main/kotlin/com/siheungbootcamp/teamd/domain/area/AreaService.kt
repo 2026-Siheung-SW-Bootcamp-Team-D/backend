@@ -115,7 +115,7 @@ class AreaService(
             status = job.status,
             estimatedExternalCalls = EstimatedExternalCalls(
                 odsay = participantCount,  // 참여자당 1회
-                kakaoLocal = 3,             // 상위 3개 조각 * 3개 키워드 = 최대 9회 (중복 제거 후)
+                kakaoLocal = AreaJobExecutor.MAX_KAKAO_CALLS,  // 상위 3개 조각 × 1개 키워드 = 최대 3회
                 tmapTransit = 0,            // TMAP 호출 안 함
             ),
         )
