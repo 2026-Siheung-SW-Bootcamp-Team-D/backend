@@ -44,7 +44,7 @@ class FoundationIntegrationTest(
             .query(Int::class.java).single()
 
         assertEquals(14, tables)
-        assertEquals(2, migrations)
+        assertEquals(3, migrations)  // V1, V2, V3
     }
 
     @Test
@@ -60,7 +60,7 @@ class FoundationIntegrationTest(
 
     @Test
     fun `P6 migration은 기존 테이블을 보존하고 공동 후보 컬럼만 추가한다`() {
-        assertEquals(2, jdbcClient.sql(
+        assertEquals(3, jdbcClient.sql(  // V1, V2, V3
             "select count(*) from flyway_schema_history where success=true"
         ).query(Int::class.java).single())
         assertEquals(3, jdbcClient.sql(
