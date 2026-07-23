@@ -4,6 +4,7 @@ import tools.jackson.databind.ObjectMapper
 import com.siheungbootcamp.teamd.global.error.BusinessException
 import com.siheungbootcamp.teamd.global.error.ErrorCode
 import com.siheungbootcamp.teamd.global.external.ExternalApiClient
+import org.springframework.beans.factory.annotation.Qualifier
 import org.springframework.stereotype.Component
 
 /**
@@ -19,7 +20,7 @@ import org.springframework.stereotype.Component
 @Component
 class KakaoLocalClient(
     private val properties: KakaoLocalProperties,
-    private val externalApiClient: ExternalApiClient,
+    @Qualifier("kakaoExternalApiClient") private val externalApiClient: ExternalApiClient,
     private val mapper: ObjectMapper,
 ) {
     private val allowedUrlHosts = setOf("place.map.kakao.com")

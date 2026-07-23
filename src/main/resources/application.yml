@@ -36,3 +36,8 @@ app:
   kakao:
     rest-key: ${KAKAO_REST_KEY:}
     base-url: https://dapi.kakao.com
+  tmap:
+    app-key: ${TMAP_APP_KEY:}
+    base-url: https://apis.openapi.sk.com
+  job:
+    enabled: ${JOB_ENABLED:false}

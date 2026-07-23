@@ -4,6 +4,7 @@ import com.siheungbootcamp.teamd.global.error.BusinessException
 import com.siheungbootcamp.teamd.global.error.ErrorCode
 import org.slf4j.LoggerFactory
 import org.springframework.http.MediaType
+import org.springframework.http.ResponseEntity
 import org.springframework.web.client.RestClient
 import org.springframework.web.client.RestClientException
 import java.time.Duration
@@ -26,7 +27,36 @@ class ExternalApiClient(
 ) {
     private val logger = LoggerFactory.getLogger(javaClass)
 
-    fun get(url: String, headers: Map<String, String> = emptyMap()): String {
+    fun get(url: String, headers: Map<String, String> = emptyMap()): String =
+        executeWithRetry {
+            restClient.get()
+                .uri(url)
+                .headers { httpHeaders ->
+                    headers.forEach { (key, value) -> httpHeaders.set(key, value) }
+                }
+                .accept(MediaType.APPLICATION_JSON)
+                .retrieve()
+                .onStatus({ true }) { _, _ -> }
+                .toEntity(String::class.java)
+        }
+
+    /** JSON 본문을 보내는 POST 호출. 재시도·오류 매핑·로깅 규약은 [get]과 동일하다. */
+    fun post(url: String, body: Any, headers: Map<String, String> = emptyMap()): String =
+        executeWithRetry {
+            restClient.post()
+                .uri(url)
+                .headers { httpHeaders ->
+                    headers.forEach { (key, value) -> httpHeaders.set(key, value) }
+                }
+                .contentType(MediaType.APPLICATION_JSON)
+                .accept(MediaType.APPLICATION_JSON)
+                .body(body)
+                .retrieve()
+                .onStatus({ true }) { _, _ -> }
+                .toEntity(String::class.java)
+        }
+
+    private fun executeWithRetry(sendRequest: () -> ResponseEntity<String>): String {
         quotaManager.checkQuota(provider)
         val startTime = Instant.now()
 
@@ -34,15 +64,7 @@ class ExternalApiClient(
             try {
                 // onStatus를 모든 상태코드에 대해 no-op으로 등록해 4xx/5xx도 예외 없이 toEntity로 받는다.
                 // 그래야 429의 Retry-After 헤더와 5xx/기타 4xx를 구분해서 직접 분기할 수 있다.
-                val entity = restClient.get()
-                    .uri(url)
-                    .headers { httpHeaders ->
-                        headers.forEach { (key, value) -> httpHeaders.set(key, value) }
-                    }
-                    .accept(MediaType.APPLICATION_JSON)
-                    .retrieve()
-                    .onStatus({ true }) { _, _ -> }
-                    .toEntity(String::class.java)
+                val entity = sendRequest()
 
                 val duration = Duration.between(startTime, Instant.now())
                 val status = entity.statusCode

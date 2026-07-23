@@ -173,11 +173,11 @@ class PlaceContractTest(
     @Test
     fun `V2-3 검색 흐름의 소스코드에는 TMAP·ODsay 참조가 없다`() {
         // P2는 Kakao Local만 사용한다(03-phase2-place-search.md). TMAP·ODsay 어댑터는 P5·P6 몫이며
-        // 지금 그런 코드 자체가 없으므로, place/카카오/외부공통기반 소스 트리에 두 이름이 등장하지
-        // 않는 것으로 "검색이 TMAP·ODsay를 호출하지 않는다"는 사실을 고정한다.
+        // P5에서 infra/external/tmap 아래 추가되었으므로, place/카카오/외부공통기반 소스 트리에
+        // 두 이름이 등장하지 않는 것으로 "검색이 TMAP·ODsay를 호출하지 않는다"는 사실을 고정한다.
         val roots = listOf(
             "src/main/kotlin/com/siheungbootcamp/teamd/domain/place",
-            "src/main/kotlin/com/siheungbootcamp/teamd/infra/external",
+            "src/main/kotlin/com/siheungbootcamp/teamd/infra/external/kakao",
             "src/main/kotlin/com/siheungbootcamp/teamd/global/external",
         )
         val forbidden = listOf("TMAP", "ODsay", "Odsay", "OdSay")
