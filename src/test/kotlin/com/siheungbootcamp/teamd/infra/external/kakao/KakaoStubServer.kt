@@ -19,6 +19,7 @@ class KakaoStubServer(port: Int = 0) : AutoCloseable {
         }
 
     private val requestCounts = mutableMapOf<String, AtomicInteger>()
+    var tmapRequestCount: Int = 0
 
     init {
         server.createContext("/v2/local/search/keyword.json") { exchange ->

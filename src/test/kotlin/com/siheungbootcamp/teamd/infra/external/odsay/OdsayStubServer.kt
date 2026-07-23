@@ -16,7 +16,7 @@ class OdsayStubServer(port: Int = 0) : AutoCloseable {
             return "http://127.0.0.1:$port"
         }
 
-    var responseMode: ResponseMode = ResponseMode.SUCCESS_POLYGON
+    var responseMode: ResponseMode = ResponseMode.SUCCESS
     private val requestCount = AtomicInteger(0)
 
     init {
@@ -43,7 +43,7 @@ class OdsayStubServer(port: Int = 0) : AutoCloseable {
         val count = requestCount.incrementAndGet()
 
         when (responseMode) {
-            ResponseMode.SUCCESS_POLYGON -> {
+            ResponseMode.SUCCESS, ResponseMode.SUCCESS_POLYGON -> {
                 // 단순 폴리곤 응답: 경기도 시흥시 근처 영역
                 val response = """
                 {
@@ -109,6 +109,24 @@ class OdsayStubServer(port: Int = 0) : AutoCloseable {
                 // 응답 계약 위반: feature가 없거나 geometry가 잘못됨
                 sendResponse(exchange, 200, """{"result": {}}""")
             }
+            ResponseMode.NO_INTERSECTION -> {
+                // 교집합이 없도록 겹치지 않는 폴리곤 반환
+                val response = """
+                {
+                  "result": {
+                    "feature": [
+                      {
+                        "geometry": {
+                          "type": "Polygon",
+                          "coordinates": [[[126.5, 37.0], [126.6, 37.0], [126.6, 37.1], [126.5, 37.1], [126.5, 37.0]]]
+                        }
+                      }
+                    ]
+                  }
+                }
+                """.trimIndent()
+                sendResponse(exchange, 200, response)
+            }
         }
     }
 
@@ -124,6 +142,8 @@ class OdsayStubServer(port: Int = 0) : AutoCloseable {
         SUCCESS_MULTIPOLYGON,
         TOO_MANY_REQUESTS,
         SERVER_ERROR,
-        MALFORMED
+        MALFORMED,
+        NO_INTERSECTION,
+        SUCCESS
     }
 }

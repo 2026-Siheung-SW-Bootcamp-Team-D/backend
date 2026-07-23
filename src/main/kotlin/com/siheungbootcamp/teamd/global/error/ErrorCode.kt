@@ -27,5 +27,7 @@ enum class ErrorCode(
     EXTERNAL_BAD_RESPONSE(HttpStatus.BAD_GATEWAY, "외부 서비스 응답을 처리할 수 없습니다."),
     EXTERNAL_UNAVAILABLE(HttpStatus.SERVICE_UNAVAILABLE, "외부 서비스를 일시적으로 사용할 수 없습니다."),
     QUOTA_EXCEEDED(HttpStatus.SERVICE_UNAVAILABLE, "오늘의 외부 서비스 사용 한도에 도달했습니다."),
+    NO_INTERSECTION(HttpStatus.SERVICE_UNAVAILABLE, "공통 도달 영역이 없습니다."),
+    NO_AREA_ANCHOR(HttpStatus.SERVICE_UNAVAILABLE, "탐색 기준점을 찾을 수 없습니다."),
     INTERNAL_ERROR(HttpStatus.INTERNAL_SERVER_ERROR, "요청을 처리하지 못했습니다. 잠시 후 다시 시도해 주세요."),
 }
