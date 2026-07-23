@@ -133,9 +133,12 @@ class P6AreaContractTest(
         }.andReturn().response
         val getData = objectMapper.readTree(getRes.contentAsString)
         assertEquals("SUCCEEDED", getData.path("status").asText())
-        val candidates = getData.path("result").path("candidates")
-        assertEquals(true, candidates.isArray)
-        assertEquals(true, candidates.size() <= 3)
+        // Task 5: 새로운 응답 구조 (participantCenter, isochrones, commonArea nullable, anchors)
+        val result = getData.path("result")
+        assertEquals(true, result.path("participantCenter").isObject)
+        assertEquals(true, result.path("isochrones").isArray)
+        assertEquals(true, result.path("anchors").isArray)
+        assertEquals(true, result.path("anchors").size() <= 3)
 
         // TMAP 호출 0회 확인
         assertEquals(0, kakaoStubServer.tmapRequestCount)
@@ -220,8 +223,9 @@ class P6AreaContractTest(
             bearer(member.token)
         }.andReturn().response
         val getData = objectMapper.readTree(getRes.contentAsString)
-        assertEquals("FAILED", getData.path("status").asText())
-        assertEquals("NO_INTERSECTION", getData.path("errorCode").asText())
+        // Task 5: 교집합 없음은 실패가 아니라 성공 (commonArea=null)
+        assertEquals("SUCCEEDED", getData.path("status").asText())
+        assertEquals(true, getData.path("result").path("commonArea").isNull)
     }
 
     @Test
@@ -247,8 +251,9 @@ class P6AreaContractTest(
             bearer(member.token)
         }.andReturn().response
         val getData = objectMapper.readTree(getRes.contentAsString)
-        assertEquals("FAILED", getData.path("status").asText())
-        assertEquals("NO_AREA_ANCHOR", getData.path("errorCode").asText())
+        // Task 5: 기준점 없음은 실패가 아니라 성공 (anchors=[])
+        assertEquals("SUCCEEDED", getData.path("status").asText())
+        assertEquals(0, getData.path("result").path("anchors").size())
     }
 
     @Test
