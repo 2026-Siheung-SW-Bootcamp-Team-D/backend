@@ -7,6 +7,7 @@ import com.siheungbootcamp.teamd.global.error.ErrorCode
 import com.siheungbootcamp.teamd.global.job.JobExecutor
 import com.siheungbootcamp.teamd.infra.external.kakao.KakaoLocalClient
 import com.siheungbootcamp.teamd.infra.external.odsay.OdsayIsochroneClient
+import jakarta.annotation.PostConstruct
 import org.locationtech.jts.geom.Geometry
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Component
@@ -17,6 +18,7 @@ import tools.jackson.databind.node.ArrayNode
 import tools.jackson.databind.node.ObjectNode
 import java.nio.ByteBuffer
 import java.time.Instant
+import java.time.temporal.ChronoUnit
 import java.util.*
 
 /**
@@ -26,6 +28,11 @@ import java.util.*
  * 1. ISOCHRONE: ODsay에서 각 참여자별 도달권 조회 (N회)
  * 2. INTERSECTION: JTS로 교집합 계산 후 상위 3개 조각 (0회)
  * 3. AREA_ANCHOR_COLLECTION: Kakao Local에서 기준점 검색 (최대 9회)
+ *
+ * 흐름:
+ * 1. stateWriter의 짧은 트랜잭션으로 다음 작업을 원자적으로 조회하고 RUNNING으로 표시
+ * 2. 트랜잭션 밖에서 외부 API 호출 (ISOCHRONE, INTERSECTION, AREA_ANCHOR_COLLECTION)
+ * 3. 결과에 맞는 markSucceeded/markFailed가 각각 짧은 쓰기 트랜잭션(stateWriter 호출)으로 저장
  *
  * 각 단계 끝에 진행 상황을 저장하고, 트랜잭션 밖에서 외부 호출을 수행한다.
  * TMAP은 호출하지 않음 (request count = 0).
@@ -40,10 +47,12 @@ class AreaJobExecutor(
     private val kakaoClient: KakaoLocalClient,
     private val originCipher: OriginCipher,
     private val mapper: ObjectMapper,
+    private val stateWriter: AreaJobStateWriter,
 ) : JobExecutor {
     private val logger = LoggerFactory.getLogger(javaClass)
     private val maxRetries = 3
     private val keywords = listOf("역", "맛집", "카페")
+    private val staleJobThresholdMinutes = 30L
 
     companion object {
         /**
@@ -55,55 +64,55 @@ class AreaJobExecutor(
         const val MAX_KAKAO_CALLS = 3
     }
 
+    /**
+     * 애플리케이션 시작 시 crashed RUNNING 작업들을 복구한다.
+     */
+    @PostConstruct
+    fun recoverStaleJobs() {
+        val staleBefore = Instant.now().minus(staleJobThresholdMinutes, ChronoUnit.MINUTES)
+        stateWriter.recoverStaleRunningJobs(staleBefore)
+    }
+
     override fun processOne(): Boolean {
-        val job = loadNextJob() ?: return false
+        val job = stateWriter.claimNextJob() ?: return false
         logger.info("area_job_processing jobId=${job.publicId}")
 
         try {
             executeJob(job)
             logger.info("area_job_success jobId=${job.publicId}")
+        } catch (e: BusinessException) {
+            logger.warn("area_job_business_error jobId=${job.publicId} code=${e.errorCode.name}")
+            stateWriter.markFailed(job, e.errorCode.name)
         } catch (e: Exception) {
             logger.error("area_job_error jobId=${job.publicId} error=${e.message}", e)
-            markFailed(job, ErrorCode.EXTERNAL_UNAVAILABLE.name)
+            stateWriter.markFailed(job, ErrorCode.EXTERNAL_UNAVAILABLE.name)
         }
         return true
     }
 
-    @Transactional(readOnly = true)
-    private fun loadNextJob(): AreaSearchJob? {
-        return jobRepository.findNextPending()
-    }
-
     private fun executeJob(job: AreaSearchJob) {
-        markRunning(job)
-
-        try {
-            // Phase 1: ISOCHRONE
-            val isochroneGeometries = executeIsochronePhase(job)
-            if (isochroneGeometries.isEmpty()) {
-                markFailed(job, ErrorCode.EXTERNAL_UNAVAILABLE.name)
-                return
-            }
-
-            // Phase 2: INTERSECTION
-            val intersectionPieces = executeIntersectionPhase(job, isochroneGeometries)
-            if (intersectionPieces.isEmpty()) {
-                markFailed(job, ErrorCode.NO_INTERSECTION.name)
-                return
-            }
-
-            // Phase 3: AREA_ANCHOR_COLLECTION
-            val candidates = executeAnchorPhase(job, intersectionPieces)
-            if (candidates.isEmpty()) {
-                markFailed(job, ErrorCode.NO_AREA_ANCHOR.name)
-                return
-            }
-
-            markSucceeded(job, candidates)
-        } catch (e: BusinessException) {
-            logger.warn("area_job_business_error jobId=${job.publicId} code=${e.errorCode.name}")
-            markFailed(job, ErrorCode.EXTERNAL_UNAVAILABLE.name)
+        // Phase 1: ISOCHRONE
+        val isochroneGeometries = executeIsochronePhase(job)
+        if (isochroneGeometries.isEmpty()) {
+            stateWriter.markFailed(job, ErrorCode.EXTERNAL_UNAVAILABLE.name)
+            return
         }
+
+        // Phase 2: INTERSECTION
+        val intersectionPieces = executeIntersectionPhase(job, isochroneGeometries)
+        if (intersectionPieces.isEmpty()) {
+            stateWriter.markFailed(job, ErrorCode.NO_INTERSECTION.name)
+            return
+        }
+
+        // Phase 3: AREA_ANCHOR_COLLECTION
+        val candidates = executeAnchorPhase(job, intersectionPieces)
+        if (candidates.isEmpty()) {
+            stateWriter.markFailed(job, ErrorCode.NO_AREA_ANCHOR.name)
+            return
+        }
+
+        stateWriter.markSucceeded(job, candidates)
     }
 
     /**
@@ -125,7 +134,7 @@ class AreaJobExecutor(
 
             val originCiphertext = participant.originCiphertext ?: run {
                 logger.warn("area_isochrone_no_origin jobId=${job.publicId} participantId=$pId")
-                throw BusinessException(ErrorCode.EXTERNAL_UNAVAILABLE)
+                throw BusinessException(ErrorCode.ORIGIN_REQUIRED)
             }
 
             // 출발지 복호화 (메모리에서만 사용, 저장하지 않음)
@@ -155,7 +164,7 @@ class AreaJobExecutor(
             }
         }
 
-        updateProgress(job, "ISOCHRONE", "fetched ${geometries.size} isochrones")
+        stateWriter.updateProgress(job, "ISOCHRONE", "fetched ${geometries.size} isochrones")
         return geometries
     }
 
@@ -165,7 +174,7 @@ class AreaJobExecutor(
     private fun executeIntersectionPhase(job: AreaSearchJob, geometries: List<Geometry>): List<Geometry> {
         val pieces = geometryService.intersectLargest(geometries, limit = 3)
         logger.info("area_intersection_success jobId=${job.publicId} pieceCount=${pieces.size}")
-        updateProgress(job, "INTERSECTION", "found ${pieces.size} pieces")
+        stateWriter.updateProgress(job, "INTERSECTION", "found ${pieces.size} pieces")
         return pieces
     }
 
@@ -253,57 +262,7 @@ class AreaJobExecutor(
             }
 
         logger.info("area_anchor_success jobId=${job.publicId} candidateCount=${sortedCandidates.size}")
-        updateProgress(job, "AREA_ANCHOR_COLLECTION", "found ${sortedCandidates.size} candidates")
+        stateWriter.updateProgress(job, "AREA_ANCHOR_COLLECTION", "found ${sortedCandidates.size} candidates")
         return sortedCandidates
-    }
-
-    @Transactional
-    private fun markRunning(job: AreaSearchJob) {
-        job.markRunning()
-        jobRepository.save(job)
-    }
-
-    @Transactional
-    private fun updateProgress(job: AreaSearchJob, phase: String, details: String) {
-        val progress = (mapper.createObjectNode() as ObjectNode).apply {
-            put(phase, details)
-            put("updatedAt", Instant.now().toString())
-        }
-        job.updateProgress(phase, progress)
-        jobRepository.save(job)
-    }
-
-    @Transactional
-    private fun markSucceeded(job: AreaSearchJob, candidates: List<AreaCandidate>) {
-        // 후보 저장
-        candidates.forEach { candidateRepository.save(it) }
-
-        // 결과 JSON 구성
-        val result = (mapper.createObjectNode() as ObjectNode).apply {
-            val candidatesArray = (mapper.createArrayNode() as ArrayNode)
-            candidates.forEach { candidate ->
-                candidatesArray.add(
-                    (mapper.createObjectNode() as ObjectNode).apply {
-                        put("candidateId", candidate.publicId)
-                        put("name", candidate.name)
-                        put("lon", candidate.lon)
-                        put("lat", candidate.lat)
-                        set("metrics", mapper.readTree(candidate.metricsJson))
-                        set("reasons", mapper.readTree(candidate.reasonsJson))
-                        put("rank", candidate.rank)
-                    }
-                )
-            }
-            set("candidates", candidatesArray)
-        }
-
-        job.markSucceeded(result)
-        jobRepository.save(job)
-    }
-
-    @Transactional
-    private fun markFailed(job: AreaSearchJob, errorCode: String) {
-        job.markFailed(errorCode)
-        jobRepository.save(job)
     }
 }
