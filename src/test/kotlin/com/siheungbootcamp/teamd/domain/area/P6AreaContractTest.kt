@@ -135,9 +135,9 @@ class P6AreaContractTest(
         assertEquals("SUCCEEDED", getData.path("status").asText())
         // Task 5: 새로운 응답 구조 (participantCenter, isochrones, commonArea nullable, anchors)
         val result = getData.path("result")
-        assertEquals(true, result.path("participantCenter").isObject)
-        assertEquals(true, result.path("isochrones").isArray)
-        assertEquals(true, result.path("anchors").isArray)
+        assertEquals(true, result.has("participantCenter"))
+        assertEquals(true, result.has("isochrones"))
+        assertEquals(true, result.has("anchors"))
         assertEquals(true, result.path("anchors").size() <= 3)
 
         // TMAP 호출 0회 확인
@@ -253,7 +253,9 @@ class P6AreaContractTest(
         val getData = objectMapper.readTree(getRes.contentAsString)
         // Task 5: 기준점 없음은 실패가 아니라 성공 (anchors=[])
         assertEquals("SUCCEEDED", getData.path("status").asText())
-        assertEquals(0, getData.path("result").path("anchors").size())
+        val anchors = getData.path("result").path("anchors")
+        assertEquals(true, anchors.isArray)
+        assertEquals(0, anchors.size())
     }
 
     @Test

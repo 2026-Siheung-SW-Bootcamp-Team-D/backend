@@ -317,7 +317,7 @@ class AreaJobExecutor(
             logger.warn("area_anchor_no_origins jobId=${jobId}")
             return AreaComputationResult(
                 isochrones = buildAnonymousIsochrones(isochroneGeometries),
-                commonArea = commonArea?.let { mapper.readTree(it.toString()) },
+                commonArea = commonArea?.let { geometryToGeoJson(it) },
                 participantCenter = null,
                 anchors = emptyList()
             )
@@ -366,7 +366,7 @@ class AreaJobExecutor(
 
         return AreaComputationResult(
             isochrones = buildAnonymousIsochrones(isochroneGeometries),
-            commonArea = commonArea?.let { mapper.readTree(it.toString()) },
+            commonArea = commonArea?.let { geometryToGeoJson(it) },
             participantCenter = center,
             anchors = sortedAnchors,
         )
@@ -376,8 +376,95 @@ class AreaJobExecutor(
         return geometries.mapIndexed { index, geometry ->
             AnonymousIsochroneDto(
                 areaId = "area_${index + 1}",
-                geometry = mapper.readTree(geometry.toString()),
+                geometry = geometryToGeoJson(geometry),
             )
         }
+    }
+
+    private fun geometryToGeoJson(geometry: Geometry): JsonNode {
+        val geom = (mapper.createObjectNode() as ObjectNode).apply {
+            put("type", geometry.geometryType)
+
+            when (geometry.geometryType) {
+                "Polygon" -> {
+                    val polygon = geometry as org.locationtech.jts.geom.Polygon
+                    val coordinates = mapper.createArrayNode()
+
+                    // Get all rings (exterior + holes)
+                    val allRings = mutableListOf<Array<org.locationtech.jts.geom.Coordinate>>()
+                    allRings.add(polygon.exteriorRing.coordinates)
+
+                    // Iterate through interior rings until getInteriorRingN throws exception
+                    var ringIndex = 0
+                    while (true) {
+                        try {
+                            allRings.add(polygon.getInteriorRingN(ringIndex).coordinates)
+                            ringIndex++
+                        } catch (e: Exception) {
+                            break
+                        }
+                    }
+
+                    // Convert all rings to JSON
+                    for (ring in allRings) {
+                        val ringCoords = mapper.createArrayNode()
+                        for (coord in ring) {
+                            ringCoords.add(mapper.createArrayNode().apply {
+                                add(coord.x)
+                                add(coord.y)
+                            })
+                        }
+                        coordinates.add(ringCoords)
+                    }
+
+                    set("coordinates", coordinates)
+                }
+                "MultiPolygon" -> {
+                    val multiPolygon = geometry as org.locationtech.jts.geom.MultiPolygon
+                    val coordinates = mapper.createArrayNode()
+
+                    for (i in 0 until multiPolygon.numGeometries) {
+                        val polygon = multiPolygon.getGeometryN(i) as org.locationtech.jts.geom.Polygon
+                        val polyCoords = mapper.createArrayNode()
+
+                        // Get all rings (exterior + holes)
+                        val allRings = mutableListOf<Array<org.locationtech.jts.geom.Coordinate>>()
+                        allRings.add(polygon.exteriorRing.coordinates)
+
+                        // Iterate through interior rings until getInteriorRingN throws exception
+                        var ringIndex = 0
+                        while (true) {
+                            try {
+                                allRings.add(polygon.getInteriorRingN(ringIndex).coordinates)
+                                ringIndex++
+                            } catch (e: Exception) {
+                                break
+                            }
+                        }
+
+                        // Convert all rings to JSON
+                        for (ring in allRings) {
+                            val ringCoords = mapper.createArrayNode()
+                            for (coord in ring) {
+                                ringCoords.add(mapper.createArrayNode().apply {
+                                    add(coord.x)
+                                    add(coord.y)
+                                })
+                            }
+                            polyCoords.add(ringCoords)
+                        }
+
+                        coordinates.add(polyCoords)
+                    }
+
+                    set("coordinates", coordinates)
+                }
+                else -> {
+                    // For other geometry types, just return empty coordinates
+                    set("coordinates", mapper.createArrayNode())
+                }
+            }
+        }
+        return geom
     }
 }

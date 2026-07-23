@@ -99,7 +99,7 @@ class AreaJobStateWriter(
                 putNull("participantCenter")
             }
 
-            // 익명 isochrone
+            // 익명 isochrone - geometry는 이미 JsonNode 형식이므로 그대로 사용
             val isochronesArray = mapper.createArrayNode()
             computation.isochrones.forEach { isochrone ->
                 isochronesArray.add(
@@ -111,7 +111,7 @@ class AreaJobStateWriter(
             }
             set("isochrones", isochronesArray)
 
-            // 공통 영역 (nullable)
+            // 공통 영역 (nullable) - commonArea도 이미 JsonNode 형식이므로 그대로 사용
             if (computation.commonArea != null) {
                 set("commonArea", computation.commonArea)
             } else {
