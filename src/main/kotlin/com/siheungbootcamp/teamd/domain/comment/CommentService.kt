@@ -16,7 +16,7 @@ import org.springframework.transaction.annotation.Transactional
  * 댓글의 생성·조회·수정·삭제의 비즈니스 로직을 담당한다.
  *
  * 댓글은 soft delete를 지원하며, 목록 조회는 삭제된 댓글을 제외한다.
- * 작성자는 수정·삭제 가능하고, 호스트는 삭제만 가능하다.
+ * 작성자만 수정·삭제 가능하다.
  * 생성 시 참여자별 20회/분 rate limit을 적용한다.
  */
 @Service
@@ -116,14 +116,8 @@ class CommentService(
             throw BusinessException(ErrorCode.RESOURCE_NOT_FOUND)
         }
 
-        val currentParticipant = participants.findByIdAndBoardId(principal.participantId, boardId_internal)
-            ?: throw BusinessException(ErrorCode.FORBIDDEN)
-
-        // 작성자 또는 호스트만 삭제 가능
-        val isAuthor = comment.author.id == principal.participantId
-        val isHost = currentParticipant.role.name == "HOST"
-
-        if (!isAuthor && !isHost) {
+        // 작성자만 삭제 가능
+        if (comment.author.id != principal.participantId) {
             throw BusinessException(ErrorCode.FORBIDDEN)
         }
 

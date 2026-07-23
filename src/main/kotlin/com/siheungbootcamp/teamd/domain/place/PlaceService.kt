@@ -18,7 +18,8 @@ import java.net.URL
  * 장소 검색·등록·조회·삭제의 비즈니스 로직을 담당한다.
  *
  * 검색은 외부 API를 호출하지만 저장하지 않는다.
- * 등록·삭제는 권한과 상태를 검증한다.
+ * 등록은 제안자, 삭제는 모든 활성 참여자가 가능하며 상태를 검증한다.
+ * 선택된 장소 삭제 시 보드의 선택 포인터를 함께 cleared한다.
  */
 @Service
 @Transactional(readOnly = true)
@@ -223,18 +224,9 @@ class PlaceService(
         val place = places.findByPublicIdAndBoardId(placeId, boardId_internal)
             ?: throw BusinessException(ErrorCode.RESOURCE_NOT_FOUND)
 
-        val proposer = participants.findByIdAndBoardId(place.proposer.id!!, boardId_internal)
-            ?: throw BusinessException(ErrorCode.FORBIDDEN)
-
-        // Check authorization: proposer or host
-        val isProposer = principal.participantId == proposer.id
+        // Check authorization: any active participant can delete
         val currentParticipant = participants.findByIdAndBoardId(principal.participantId, boardId_internal)
             ?: throw BusinessException(ErrorCode.FORBIDDEN)
-        val isHost = currentParticipant.role.name == "HOST"
-
-        if (!isProposer && !isHost) {
-            throw BusinessException(ErrorCode.FORBIDDEN)
-        }
 
         // 이미 삭제된 장소를 같은 권한으로 다시 삭제해도 204(멱등). 참조 검사·재삭제 없이 그대로 종료한다.
         if (place.deletedAt != null) return
@@ -245,6 +237,16 @@ class PlaceService(
             if (usage != null) {
                 throw BusinessException(ErrorCode.PLACE_IN_USE, usage.details)
             }
+        }
+
+        // If this place is currently selected, clear the selection (ERD v1.0 section 5.2)
+        val boardForUpdate = boards.findByPublicIdForUpdate(boardId)
+            ?: throw BusinessException(ErrorCode.RESOURCE_NOT_FOUND)
+        val placeId_internal = place.id ?: throw BusinessException(ErrorCode.INTERNAL_ERROR)
+
+        if (boardForUpdate.selectedPlaceId == placeId_internal) {
+            boardForUpdate.clearSelection(principal.participantId, java.time.Instant.now())
+            boards.save(boardForUpdate)
         }
 
         place.softDelete()

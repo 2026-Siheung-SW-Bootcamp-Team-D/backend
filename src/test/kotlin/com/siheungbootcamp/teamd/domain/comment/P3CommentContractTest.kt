@@ -101,7 +101,7 @@ class P3CommentContractTest(
     }
 
     @Test
-    fun `V3-2 댓글 권한 - 타인 수정은 403, 호스트 삭제는 204, 작성자 삭제는 204`() {
+    fun `V3-2 댓글 권한 - 타인 수정은 403, 타인 삭제는 403, 작성자 삭제는 204`() {
         val host = createBoard("댓글 권한 보드", "호스트")
         val member = join(host.inviteCode, "멤버")
         val place = createPlace(host, "테스트 장소")
@@ -126,7 +126,15 @@ class P3CommentContractTest(
             jsonPath("$.error.code") { value("FORBIDDEN") }
         }
 
-        // 호스트가 삭제 → 204 (자신의 댓글 + 호스트)
+        // 멤버(타인)가 삭제 시도 → 403 (작성자만 삭제 가능)
+        mockMvc.delete("/api/v1/boards/${host.boardId}/places/${place.placeId}/comments/$commentId") {
+            bearer(member)
+        }.andExpect {
+            status { isForbidden() }
+            jsonPath("$.error.code") { value("FORBIDDEN") }
+        }
+
+        // 호스트(작성자)가 자신의 댓글 삭제 → 204
         mockMvc.delete("/api/v1/boards/${host.boardId}/places/${place.placeId}/comments/$commentId") {
             bearer(host.token)
         }.andExpect { status { isNoContent() } }
