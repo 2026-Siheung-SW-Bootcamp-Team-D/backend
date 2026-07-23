@@ -19,6 +19,7 @@ class KakaoStubServer(port: Int = 0) : AutoCloseable {
         }
 
     private val requestCounts = mutableMapOf<String, AtomicInteger>()
+    var tmapRequestCount: Int = 0
 
     init {
         server.createContext("/v2/local/search/keyword.json") { exchange ->
@@ -72,8 +73,8 @@ class KakaoStubServer(port: Int = 0) : AutoCloseable {
               "category_name": "음식점",
               "address_name": "서울 강남구 테스트동",
               "road_address_name": "서울 강남구 테스트로 123",
-              "x": 127.0,
-              "y": 37.0,
+              "x": 127.05,
+              "y": 37.4,
               "place_url": "https://place.map.kakao.com/123456",
               "distance": 100
             }

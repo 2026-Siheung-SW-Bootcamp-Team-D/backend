@@ -37,6 +37,9 @@ data class PlaceResponse(
     val proposerId: String,
     val commentCount: Int,
     val createdAt: Instant,
+    val likeCount: Int = 0,
+    val likedByMe: Boolean = false,
+    val selected: Boolean = false,
 )
 
 data class PlaceListResponse(

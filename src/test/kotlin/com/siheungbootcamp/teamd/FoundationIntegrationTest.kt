@@ -43,8 +43,8 @@ class FoundationIntegrationTest(
         val migrations = jdbcClient.sql("select count(*) from flyway_schema_history where success=true")
             .query(Int::class.java).single()
 
-        assertEquals(13, tables)
-        assertEquals(1, migrations)
+        assertEquals(14, tables)
+        assertEquals(2, migrations)
     }
 
     @Test
@@ -56,6 +56,23 @@ class FoundationIntegrationTest(
         assertEquals(2, definitions.size)
         assertTrue(definitions.any { it.contains("WHERE (status = 'OPEN'::text)") })
         assertTrue(definitions.any { it.contains("QUEUED") && it.contains("RUNNING") && it.contains("RETRY_WAIT") })
+    }
+
+    @Test
+    fun `P6 migration은 기존 테이블을 보존하고 공동 후보 컬럼만 추가한다`() {
+        assertEquals(2, jdbcClient.sql(
+            "select count(*) from flyway_schema_history where success=true"
+        ).query(Int::class.java).single())
+        assertEquals(3, jdbcClient.sql(
+            """
+            select count(*) from information_schema.columns
+            where table_name='board'
+              and column_name in ('selected_place_id','selected_by_participant_id','selected_at')
+            """.trimIndent()
+        ).query(Int::class.java).single())
+        assertEquals(1, jdbcClient.sql(
+            "select count(*) from information_schema.tables where table_name='place_like'"
+        ).query(Int::class.java).single())
     }
 
     companion object {

@@ -18,7 +18,8 @@ import java.net.URL
  * 장소 검색·등록·조회·삭제의 비즈니스 로직을 담당한다.
  *
  * 검색은 외부 API를 호출하지만 저장하지 않는다.
- * 등록·삭제는 권한과 상태를 검증한다.
+ * 등록은 제안자, 삭제는 모든 활성 참여자가 가능하며 상태를 검증한다.
+ * 선택된 장소 삭제 시 보드의 선택 포인터를 함께 cleared한다.
  */
 @Service
 @Transactional(readOnly = true)
@@ -27,6 +28,7 @@ class PlaceService(
     private val boards: BoardRepository,
     private val participants: ParticipantRepository,
     private val comments: CommentRepository,
+    private val likes: PlaceLikeRepository,
     private val kakao: KakaoLocalClient,
     private val checks: AuthorizationChecks,
     private val usageCheckers: List<PlaceUsageChecker> = emptyList(),
@@ -121,8 +123,9 @@ class PlaceService(
         )
 
         val saved = places.save(place)
-        val commentCount = comments.countByPlaceIdAndNotDeleted(saved.id ?: throw BusinessException(ErrorCode.INTERNAL_ERROR)).toInt()
-        return toResponse(saved, commentCount)
+        val placeId_internal = saved.id ?: throw BusinessException(ErrorCode.INTERNAL_ERROR)
+        val commentCount = comments.countByPlaceIdAndNotDeleted(placeId_internal).toInt()
+        return toResponse(saved, commentCount, 0, false, false)
     }
 
     fun get(boardId: String, placeId: String, principal: ParticipantPrincipal): PlaceResponse {
@@ -133,8 +136,12 @@ class PlaceService(
         val place = places.findByPublicIdAndBoardIdAndDeletedAtIsNull(placeId, boardId_internal)
             ?: throw BusinessException(ErrorCode.RESOURCE_NOT_FOUND)
 
-        val commentCount = comments.countByPlaceIdAndNotDeleted(place.id ?: throw BusinessException(ErrorCode.INTERNAL_ERROR)).toInt()
-        return toResponse(place, commentCount)
+        val placeId_internal = place.id ?: throw BusinessException(ErrorCode.INTERNAL_ERROR)
+        val commentCount = comments.countByPlaceIdAndNotDeleted(placeId_internal).toInt()
+        val likeCount = likes.countByPlaceId(placeId_internal).toInt()
+        val likedByMe = likes.existsByPlaceIdAndParticipantId(placeId_internal, principal.participantId)
+        val isSelected = placeId_internal == board.selectedPlaceId
+        return toResponse(place, commentCount, likeCount, likedByMe, isSelected)
     }
 
     fun list(
@@ -170,8 +177,35 @@ class PlaceService(
             emptyMap()
         }
 
+        // N+1 방지: 한 번의 쿼리로 모든 장소의 좋아요 수를 집계
+        val likeCounts = if (placeIds.isNotEmpty()) {
+            likes.countLikesByPlaceIds(placeIds).associate { row ->
+                val placeId = row[0] as Long
+                val count = row[1] as Long
+                placeId to count
+            }
+        } else {
+            emptyMap()
+        }
+
+        // N+1 방지: 한 번의 쿼리로 현재 사용자가 좋아요한 장소들을 조회
+        val likedPlaceIds = if (placeIds.isNotEmpty()) {
+            likes.findLikedPlaceIdsByParticipantId(placeIds, principal.participantId).toSet()
+        } else {
+            emptySet()
+        }
+
         return PageResponse(
-            items = page.content.map { toResponse(it, (commentCounts[it.id] ?: 0L).toInt()) },
+            items = page.content.map { place ->
+                val placeId = place.id ?: return@map toResponse(place, 0, 0, false, false)
+                toResponse(
+                    place,
+                    (commentCounts[placeId] ?: 0L).toInt(),
+                    (likeCounts[placeId] ?: 0L).toInt(),
+                    likedPlaceIds.contains(placeId),
+                    placeId == board.selectedPlaceId
+                )
+            },
             page = PageResponse.PageMetadata(
                 number = pageable.pageNumber + 1,
                 size = pageable.pageSize,
@@ -190,18 +224,9 @@ class PlaceService(
         val place = places.findByPublicIdAndBoardId(placeId, boardId_internal)
             ?: throw BusinessException(ErrorCode.RESOURCE_NOT_FOUND)
 
-        val proposer = participants.findByIdAndBoardId(place.proposer.id!!, boardId_internal)
-            ?: throw BusinessException(ErrorCode.FORBIDDEN)
-
-        // Check authorization: proposer or host
-        val isProposer = principal.participantId == proposer.id
+        // Check authorization: any active participant can delete
         val currentParticipant = participants.findByIdAndBoardId(principal.participantId, boardId_internal)
             ?: throw BusinessException(ErrorCode.FORBIDDEN)
-        val isHost = currentParticipant.role.name == "HOST"
-
-        if (!isProposer && !isHost) {
-            throw BusinessException(ErrorCode.FORBIDDEN)
-        }
 
         // 이미 삭제된 장소를 같은 권한으로 다시 삭제해도 204(멱등). 참조 검사·재삭제 없이 그대로 종료한다.
         if (place.deletedAt != null) return
@@ -214,11 +239,21 @@ class PlaceService(
             }
         }
 
+        // If this place is currently selected, clear the selection (ERD v1.0 section 5.2)
+        val boardForUpdate = boards.findByPublicIdForUpdate(boardId)
+            ?: throw BusinessException(ErrorCode.RESOURCE_NOT_FOUND)
+        val placeId_internal = place.id ?: throw BusinessException(ErrorCode.INTERNAL_ERROR)
+
+        if (boardForUpdate.selectedPlaceId == placeId_internal) {
+            boardForUpdate.clearSelection(principal.participantId, java.time.Instant.now())
+            boards.save(boardForUpdate)
+        }
+
         place.softDelete()
         places.save(place)
     }
 
-    private fun toResponse(place: Place, commentCount: Int): PlaceResponse {
+    private fun toResponse(place: Place, commentCount: Int, likeCount: Int = 0, likedByMe: Boolean = false, selected: Boolean = false): PlaceResponse {
         return PlaceResponse(
             placeId = place.publicId,
             name = place.name,
@@ -234,6 +269,9 @@ class PlaceService(
             proposerId = place.proposer.publicId,
             commentCount = commentCount,
             createdAt = place.createdAt,
+            likeCount = likeCount,
+            likedByMe = likedByMe,
+            selected = selected,
         )
     }
 
@@ -253,6 +291,41 @@ class PlaceService(
         if (radius != null) {
             if (lon == null || lat == null) throw BusinessException(ErrorCode.INVALID_ARGUMENT)
             if (radius <= 0 || radius > 20_000) throw BusinessException(ErrorCode.INVALID_ARGUMENT)
+        }
+    }
+
+    @Transactional
+    fun putLike(boardId: String, placeId: String, principal: ParticipantPrincipal) {
+        requireBoardParticipant(boardId, principal)
+        val board = boards.findByPublicId(boardId) ?: throw BusinessException(ErrorCode.RESOURCE_NOT_FOUND)
+        val boardId_internal = board.id ?: throw BusinessException(ErrorCode.INTERNAL_ERROR)
+
+        val place = places.findByPublicIdAndBoardIdAndDeletedAtIsNull(placeId, boardId_internal)
+            ?: throw BusinessException(ErrorCode.RESOURCE_NOT_FOUND)
+        val placeId_internal = place.id ?: throw BusinessException(ErrorCode.INTERNAL_ERROR)
+
+        // 멱등성: INSERT ... ON CONFLICT DO NOTHING으로 동시성 경쟁(race condition) 없이 처리
+        // 이미 좋아요되어 있으면 무시하고, 없으면 생성한다.
+        likes.insertOrIgnore(placeId_internal, principal.participantId)
+    }
+
+    @Transactional
+    fun deleteLike(boardId: String, placeId: String, principal: ParticipantPrincipal) {
+        requireBoardParticipant(boardId, principal)
+        val board = boards.findByPublicId(boardId) ?: throw BusinessException(ErrorCode.RESOURCE_NOT_FOUND)
+        val boardId_internal = board.id ?: throw BusinessException(ErrorCode.INTERNAL_ERROR)
+
+        val place = places.findByPublicIdAndBoardIdAndDeletedAtIsNull(placeId, boardId_internal)
+            ?: throw BusinessException(ErrorCode.RESOURCE_NOT_FOUND)
+        val placeId_internal = place.id ?: throw BusinessException(ErrorCode.INTERNAL_ERROR)
+
+        // 멱등성: 없어도 성공 반환
+        likes.deleteByPlaceIdAndParticipantId(placeId_internal, principal.participantId)
+    }
+
+    private fun requireBoardParticipant(boardId: String, principal: ParticipantPrincipal) {
+        if (principal.boardId != boardId) {
+            throw BusinessException(ErrorCode.FORBIDDEN)
         }
     }
 

@@ -215,11 +215,11 @@ class P1ContractTest(
     }
 
     @Test
-    fun `GET invitation은 MEMBER를 403 교차 보드 토큰을 404로 거부한다`() {
+    fun `GET invitation은 MEMBER도 조회 가능하고 교차 보드 토큰을 404로 거부한다`() {
         val boardA = createBoard("초대 권한 에이", "호스트")
         val member = join(boardA.inviteCode, "멤버")
         mockMvc.get("/api/v1/boards/${boardA.boardId}/invitation") { bearer(member) }.andExpect {
-            status { isForbidden() }; jsonPath("$.error.code") { value("FORBIDDEN") }
+            status { isOk() }; jsonPath("$.inviteCode") { value(boardA.inviteCode) }
         }
         val boardB = createBoard("초대 권한 비", "호스트")
         mockMvc.get("/api/v1/boards/${boardB.boardId}/invitation") { bearer(boardA.token) }.andExpect {

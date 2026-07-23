@@ -18,6 +18,7 @@ import org.springframework.test.web.servlet.MockMvc
 import org.springframework.test.web.servlet.delete
 import org.springframework.test.web.servlet.get
 import org.springframework.test.web.servlet.post
+import org.springframework.test.web.servlet.put
 import org.testcontainers.junit.jupiter.Container
 import org.testcontainers.junit.jupiter.Testcontainers
 import org.testcontainers.postgresql.PostgreSQLContainer
@@ -207,7 +208,7 @@ class PlaceContractTest(
     }
 
     @Test
-    fun `V2-9 DELETE 삭제 권한 - 제3자 403, 제안자 204, 재삭제 204`() {
+    fun `V2-9 DELETE 삭제 권한 - 참여자 204, 비참여자 401, 재삭제 204`() {
         val host = createBoard("삭제 권한 보드", "호스트")
         val member = join(host.inviteCode, "멤버")
 
@@ -234,14 +235,9 @@ class PlaceContractTest(
 
         val placeId = objectMapper.readTree(createResult).path("placeId").asText()
 
-        // 제3자는 403
+        // 참여자(멤버, 제안자 아님)는 204로 삭제 가능 (제안자가 아니어도 삭제 가능)
         mockMvc.delete("/api/v1/boards/${host.boardId}/places/$placeId") {
             bearer(member)
-        }.andExpect { status { isForbidden() } }
-
-        // 제안자는 204
-        mockMvc.delete("/api/v1/boards/${host.boardId}/places/$placeId") {
-            bearer(host.token)
         }.andExpect { status { isNoContent() } }
 
         // 재삭제는 204 (멱등성)
@@ -404,6 +400,65 @@ class PlaceContractTest(
         // 인증 없이 조회 시 401
         mockMvc.get("/api/v1/boards/${boardA.boardId}/places/$placeId")
             .andExpect { status { isUnauthorized() } }
+    }
+
+    @Test
+    fun `선택된 장소를 삭제하면 보드의 선택 포인터가 cleared된다`() {
+        val host = createBoard("선택 삭제 보드", "호스트")
+        val member = join(host.inviteCode, "멤버")
+
+        // 장소 생성
+        val place1Result = mockMvc.post("/api/v1/boards/${host.boardId}/places") {
+            bearer(host.token)
+            contentType = MediaType.APPLICATION_JSON
+            content = """
+            {
+              "name": "테스트 장소 1",
+              "lon": 126.7,
+              "lat": 37.3,
+              "addressName": "서울시",
+              "roadAddressName": "서울시",
+              "internalCategory": "RESTAURANT",
+              "provider": "KAKAO",
+              "providerPlaceId": "test123",
+              "providerPlaceUrl": "https://place.map.kakao.com/123",
+              "source": "SEARCH_SELECT"
+            }
+            """.trimIndent()
+        }.andExpect { status { isCreated() } }
+            .andReturn().response.contentAsString
+
+        val placeId = objectMapper.readTree(place1Result).path("placeId").asText()
+
+        // 멤버가 장소 선택 (PUT /api/v1/boards/{boardId}/selected-place)
+        mockMvc.put("/api/v1/boards/${host.boardId}/selected-place") {
+            bearer(member)
+            contentType = MediaType.APPLICATION_JSON
+            content = """{"placeId": "$placeId"}"""
+        }.andExpect { status { isOk() } }
+
+        // 선택 확인
+        val beforeDelete = mockMvc.get("/api/v1/boards/${host.boardId}") {
+            bearer(host.token)
+        }.andExpect { status { isOk() } }
+            .andReturn().response.contentAsString
+
+        val beforeJson = objectMapper.readTree(beforeDelete)
+        assertEquals(placeId, beforeJson.path("selectedPlaceId").asText(), "장소가 선택되어 있어야 함")
+
+        // 참여자(멤버)가 선택된 장소 삭제
+        mockMvc.delete("/api/v1/boards/${host.boardId}/places/$placeId") {
+            bearer(member)
+        }.andExpect { status { isNoContent() } }
+
+        // 삭제 후 선택 포인터 확인 - 비어있어야 함
+        val afterDelete = mockMvc.get("/api/v1/boards/${host.boardId}") {
+            bearer(host.token)
+        }.andExpect { status { isOk() } }
+            .andReturn().response.contentAsString
+
+        val afterJson = objectMapper.readTree(afterDelete)
+        assertTrue(afterJson.path("selectedPlaceId").asText().isEmpty(), "선택된 장소가 cleared되어야 함")
     }
 
     private fun createBoard(name: String, nickname: String): CreatedBoard {
