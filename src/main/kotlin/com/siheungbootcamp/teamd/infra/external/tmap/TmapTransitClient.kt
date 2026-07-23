@@ -63,10 +63,10 @@ class TmapTransitClient(
             append("?startX=$startLon&startY=$startLat")
             append("&endX=$endLon&endY=$endLat")
             append("&arrivalDate=$arrivalDateStr&arrivalTime=$arrivalTimeStr")
-            append("&appKey=${properties.appKey}")
         }
 
-        val response = externalApiClient.get(url, headers = emptyMap())
+        // appKey는 접근 로그·프록시 로그에 남는 쿼리스트링이 아니라 헤더로 전달한다.
+        val response = externalApiClient.get(url, headers = mapOf("appKey" to properties.appKey))
 
         return try {
             val root = mapper.readTree(response)
@@ -77,18 +77,25 @@ class TmapTransitClient(
                 return null
             }
 
-            // totalTime: milliseconds → 초로 변환
-            val totalSeconds = (summary.path("totalTime").asLong() / 1000).toInt()
-            val transferCount = summary.path("transferCount").asInt(0)
-            val fareAmount = summary.path("totalFare").asInt(0)
-            val totalWalkSeconds = (summary.path("totalWalkTime").asLong() / 1000).toInt()
+            // 경로가 있다고 응답했는데 필수 필드가 없으면 계약 위반이다. 0으로 조용히 채우면
+            // 잘못된 recommendedDepartureAt이 계산되므로 명시적으로 실패시킨다.
+            val requiredFields = listOf("totalTime", "transferCount", "totalFare", "totalWalkTime")
+            requiredFields.forEach { field ->
+                if (summary.path(field).isMissingNode) {
+                    logger.warn("tmap_transit_missing_field field=$field")
+                    throw BusinessException(ErrorCode.EXTERNAL_BAD_RESPONSE)
+                }
+            }
 
+            // totalTime/totalWalkTime: milliseconds → 초로 변환
             TransitSummary(
-                totalSeconds = totalSeconds,
-                transferCount = transferCount,
-                fareAmount = fareAmount,
-                totalWalkSeconds = totalWalkSeconds,
+                totalSeconds = (summary.path("totalTime").asLong() / 1000).toInt(),
+                transferCount = summary.path("transferCount").asInt(),
+                fareAmount = summary.path("totalFare").asInt(),
+                totalWalkSeconds = (summary.path("totalWalkTime").asLong() / 1000).toInt(),
             )
+        } catch (e: BusinessException) {
+            throw e
         } catch (e: Exception) {
             logger.warn("tmap_transit_parse_error error=${e.message}")
             throw BusinessException(ErrorCode.EXTERNAL_BAD_RESPONSE)
