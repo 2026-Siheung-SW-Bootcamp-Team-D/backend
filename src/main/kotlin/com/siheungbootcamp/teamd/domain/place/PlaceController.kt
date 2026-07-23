@@ -151,6 +151,40 @@ class PlaceController(private val service: PlaceService) {
         return ResponseEntity.noContent().build()
     }
 
+    // P6 좋아요 엔드포인트
+
+    @PutMapping("/boards/{boardId}/places/{placeId}/likes/me")
+    @Operation(summary = "장소 좋아요", description = "현재 참여자가 장소에 좋아요를 표현합니다. 이미 좋아요했으면 멱등성을 유지합니다.")
+    @SecurityRequirement(name = "participantToken")
+    @ApiResponse(responseCode = "204", description = "좋아요 성공 또는 이미 좋아요함")
+    @ApiResponse(responseCode = "403", description = "다른 보드의 토큰")
+    @ApiResponse(responseCode = "404", description = "장소 또는 보드 없음")
+    @RateLimit(permits = 60, windowSeconds = 60, key = RateLimitKey.PARTICIPANT, scope = RateLimitScope.PARTICIPANT_GLOBAL)
+    fun putLike(
+        @PathVariable boardId: String,
+        @PathVariable placeId: String,
+        @Parameter(hidden = true) @CurrentParticipant principal: ParticipantPrincipal,
+    ): ResponseEntity<Void> {
+        service.putLike(boardId, placeId, principal)
+        return ResponseEntity.noContent().build()
+    }
+
+    @DeleteMapping("/boards/{boardId}/places/{placeId}/likes/me")
+    @Operation(summary = "장소 좋아요 취소", description = "현재 참여자의 좋아요를 취소합니다. 좋아요하지 않은 상태에서도 멱등성을 유지합니다.")
+    @SecurityRequirement(name = "participantToken")
+    @ApiResponse(responseCode = "204", description = "좋아요 취소 성공 또는 좋아요하지 않음")
+    @ApiResponse(responseCode = "403", description = "다른 보드의 토큰")
+    @ApiResponse(responseCode = "404", description = "보드 또는 장소 없음")
+    @RateLimit(permits = 60, windowSeconds = 60, key = RateLimitKey.PARTICIPANT, scope = RateLimitScope.PARTICIPANT_GLOBAL)
+    fun deleteLike(
+        @PathVariable boardId: String,
+        @PathVariable placeId: String,
+        @Parameter(hidden = true) @CurrentParticipant principal: ParticipantPrincipal,
+    ): ResponseEntity<Void> {
+        service.deleteLike(boardId, placeId, principal)
+        return ResponseEntity.noContent().build()
+    }
+
     /** 명세 7.2: `bbox=minLon,minLat,maxLon,maxLat` 단일 쿼리 파라미터. 형식이 어긋나면 400. */
     private fun parseBbox(raw: String?): BoundingBox? {
         if (raw == null) return null

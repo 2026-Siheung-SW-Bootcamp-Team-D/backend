@@ -48,7 +48,7 @@ class BoardService(
     fun get(boardId: String, principal: ParticipantPrincipal): BoardResponse {
         checks.requireBoard(principal, boardId)
         val board = findBoard(boardId)
-        return BoardResponse(board.publicId, board.name, range(board), board.purpose, board.status, counts = counts(board), updatedAt = board.updatedAt)
+        return toResponseWithSelection(board)
     }
 
     @Transactional
@@ -65,7 +65,7 @@ class BoardService(
     }
 
     fun invitation(boardId: String, principal: ParticipantPrincipal, baseUrl: String): InvitationResponse {
-        checks.requireBoard(principal, boardId); checks.requireHost(principal)
+        checks.requireBoard(principal, boardId)
         return invitation(findBoard(boardId), baseUrl)
     }
 
@@ -110,6 +110,57 @@ class BoardService(
         val point = participant.originCiphertext?.let(::decryptOrigin)
         return ParticipantResponse(participant.publicId, participant.nickname, participant.role.name, participant.avatarColor,
             OriginResponse(point != null, participant.originLabel, point?.first, point?.second))
+    }
+
+    @Transactional
+    fun selectPlace(boardId: String, placeId: String, principal: ParticipantPrincipal): BoardResponse {
+        checks.requireBoard(principal, boardId)
+        val board = findBoardForUpdate(boardId)
+        val boardId_internal = requireNotNull(board.id)
+
+        // placeId를 publicId로 해석해 placeId_internal을 구한다. ACTIVE 장소만 선택 가능
+        val placeIdInternal = try {
+            jdbc.sql("select id from place where public_id = :publicId and board_id = :boardId and deleted_at is null and status = 'ACTIVE'")
+                .param("publicId", placeId)
+                .param("boardId", boardId_internal)
+                .query(Long::class.java)
+                .single()
+        } catch (e: Exception) {
+            throw BusinessException(ErrorCode.RESOURCE_NOT_FOUND)
+        }
+
+        board.select(placeIdInternal, principal.participantId, Instant.now(clock))
+        boards.flush()
+        return toResponseWithSelection(board)
+    }
+
+    @Transactional
+    fun clearSelection(boardId: String, principal: ParticipantPrincipal) {
+        checks.requireBoard(principal, boardId)
+        val board = findBoardForUpdate(boardId)
+        board.clearSelection(principal.participantId, Instant.now(clock))
+        boards.flush()
+    }
+
+    private fun toResponseWithSelection(b: Board): BoardResponse {
+        val selectedPlacePublicId = b.selectedPlaceId?.let { id ->
+            try {
+                jdbc.sql("select public_id from place where id = :id").param("id", id).query(String::class.java).single()
+            } catch (e: Exception) {
+                null
+            }
+        }
+        val selectedByParticipantPublicId = b.selectedByParticipantId?.let { id ->
+            try {
+                jdbc.sql("select public_id from participant where id = :id").param("id", id).query(String::class.java).single()
+            } catch (e: Exception) {
+                null
+            }
+        }
+        return BoardResponse(b.publicId, b.name, range(b), b.purpose, b.status, counts = counts(b), updatedAt = b.updatedAt,
+            selectedPlaceId = selectedPlacePublicId,
+            selectedByParticipantId = selectedByParticipantPublicId,
+            selectedAt = b.selectedAt)
     }
 
     private fun validateDates(value: DateRangeRequest) {

@@ -27,6 +27,7 @@ class PlaceService(
     private val boards: BoardRepository,
     private val participants: ParticipantRepository,
     private val comments: CommentRepository,
+    private val likes: PlaceLikeRepository,
     private val kakao: KakaoLocalClient,
     private val checks: AuthorizationChecks,
     private val usageCheckers: List<PlaceUsageChecker> = emptyList(),
@@ -121,8 +122,9 @@ class PlaceService(
         )
 
         val saved = places.save(place)
-        val commentCount = comments.countByPlaceIdAndNotDeleted(saved.id ?: throw BusinessException(ErrorCode.INTERNAL_ERROR)).toInt()
-        return toResponse(saved, commentCount)
+        val placeId_internal = saved.id ?: throw BusinessException(ErrorCode.INTERNAL_ERROR)
+        val commentCount = comments.countByPlaceIdAndNotDeleted(placeId_internal).toInt()
+        return toResponse(saved, commentCount, 0, false)
     }
 
     fun get(boardId: String, placeId: String, principal: ParticipantPrincipal): PlaceResponse {
@@ -133,8 +135,11 @@ class PlaceService(
         val place = places.findByPublicIdAndBoardIdAndDeletedAtIsNull(placeId, boardId_internal)
             ?: throw BusinessException(ErrorCode.RESOURCE_NOT_FOUND)
 
-        val commentCount = comments.countByPlaceIdAndNotDeleted(place.id ?: throw BusinessException(ErrorCode.INTERNAL_ERROR)).toInt()
-        return toResponse(place, commentCount)
+        val placeId_internal = place.id ?: throw BusinessException(ErrorCode.INTERNAL_ERROR)
+        val commentCount = comments.countByPlaceIdAndNotDeleted(placeId_internal).toInt()
+        val likeCount = likes.countByPlaceId(placeId_internal).toInt()
+        val likedByMe = likes.existsByPlaceIdAndParticipantId(placeId_internal, principal.participantId)
+        return toResponse(place, commentCount, likeCount, likedByMe)
     }
 
     fun list(
@@ -170,8 +175,17 @@ class PlaceService(
             emptyMap()
         }
 
+        // 좋아요 수는 각각 기본값 0으로 제공 (P6 전반 좋아요 미지원 시까지)
         return PageResponse(
-            items = page.content.map { toResponse(it, (commentCounts[it.id] ?: 0L).toInt()) },
+            items = page.content.map { place ->
+                val placeId = place.id ?: return@map toResponse(place, 0)
+                toResponse(
+                    place,
+                    (commentCounts[placeId] ?: 0L).toInt(),
+                    0,
+                    false
+                )
+            },
             page = PageResponse.PageMetadata(
                 number = pageable.pageNumber + 1,
                 size = pageable.pageSize,
@@ -218,7 +232,7 @@ class PlaceService(
         places.save(place)
     }
 
-    private fun toResponse(place: Place, commentCount: Int): PlaceResponse {
+    private fun toResponse(place: Place, commentCount: Int, likeCount: Int = 0, likedByMe: Boolean = false): PlaceResponse {
         return PlaceResponse(
             placeId = place.publicId,
             name = place.name,
@@ -234,6 +248,8 @@ class PlaceService(
             proposerId = place.proposer.publicId,
             commentCount = commentCount,
             createdAt = place.createdAt,
+            likeCount = likeCount,
+            likedByMe = likedByMe,
         )
     }
 
@@ -253,6 +269,43 @@ class PlaceService(
         if (radius != null) {
             if (lon == null || lat == null) throw BusinessException(ErrorCode.INVALID_ARGUMENT)
             if (radius <= 0 || radius > 20_000) throw BusinessException(ErrorCode.INVALID_ARGUMENT)
+        }
+    }
+
+    @Transactional
+    fun putLike(boardId: String, placeId: String, principal: ParticipantPrincipal) {
+        requireBoardParticipant(boardId, principal)
+        val board = boards.findByPublicId(boardId) ?: throw BusinessException(ErrorCode.RESOURCE_NOT_FOUND)
+        val boardId_internal = board.id ?: throw BusinessException(ErrorCode.INTERNAL_ERROR)
+
+        val place = places.findByPublicIdAndBoardIdAndDeletedAtIsNull(placeId, boardId_internal)
+            ?: throw BusinessException(ErrorCode.RESOURCE_NOT_FOUND)
+        val placeId_internal = place.id ?: throw BusinessException(ErrorCode.INTERNAL_ERROR)
+
+        // 멱등성: 이미 좋아요되어 있으면 무시하고 성공 반환
+        if (!likes.existsByPlaceIdAndParticipantId(placeId_internal, principal.participantId)) {
+            val like = PlaceLike(PlaceLikeId(placeId_internal, principal.participantId))
+            likes.save(like)
+        }
+    }
+
+    @Transactional
+    fun deleteLike(boardId: String, placeId: String, principal: ParticipantPrincipal) {
+        requireBoardParticipant(boardId, principal)
+        val board = boards.findByPublicId(boardId) ?: throw BusinessException(ErrorCode.RESOURCE_NOT_FOUND)
+        val boardId_internal = board.id ?: throw BusinessException(ErrorCode.INTERNAL_ERROR)
+
+        val place = places.findByPublicIdAndBoardIdAndDeletedAtIsNull(placeId, boardId_internal)
+            ?: throw BusinessException(ErrorCode.RESOURCE_NOT_FOUND)
+        val placeId_internal = place.id ?: throw BusinessException(ErrorCode.INTERNAL_ERROR)
+
+        // 멱등성: 없어도 성공 반환
+        likes.deleteByPlaceIdAndParticipantId(placeId_internal, principal.participantId)
+    }
+
+    private fun requireBoardParticipant(boardId: String, principal: ParticipantPrincipal) {
+        if (principal.boardId != boardId) {
+            throw BusinessException(ErrorCode.FORBIDDEN)
         }
     }
 

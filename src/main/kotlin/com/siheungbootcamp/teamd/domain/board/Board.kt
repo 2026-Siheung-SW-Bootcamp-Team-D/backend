@@ -7,7 +7,7 @@ import jakarta.persistence.*
 import java.time.Instant
 import java.time.LocalDate
 
-/** 약속의 기간과 참여 가능 상태, 재노출해야 하는 초대 코드 원문을 보존한다. */
+/** 약속의 기간과 참여 가능 상태, 재노출해야 하는 초대 코드 원문을 보존한다. 참여자의 공동 선택 장소를 기록한다. */
 @Entity
 @Table(name = "board")
 class Board(
@@ -20,6 +20,9 @@ class Board(
     @Column(name = "invite_code", nullable = false, unique = true) val inviteCode: String,
     @Column(name = "invite_expires_at", nullable = false) var inviteExpiresAt: Instant,
     @Column(name = "public_token", unique = true) var publicToken: String? = null,
+    @Column(name = "selected_place_id") var selectedPlaceId: Long? = null,
+    @Column(name = "selected_by_participant_id") var selectedByParticipantId: Long? = null,
+    @Column(name = "selected_at") var selectedAt: Instant? = null,
 ) : BaseEntity() {
     fun update(name: String?, start: LocalDate?, end: LocalDate?, purpose: String?) {
         name?.let { this.name = it }; start?.let { dateStart = it }; end?.let { dateEnd = it }
@@ -27,6 +30,18 @@ class Board(
     }
     fun confirm() { status = BoardStatus.CONFIRMED }
     fun close() { status = BoardStatus.CLOSED }
+
+    fun select(placeId: Long, participantId: Long, now: Instant) {
+        selectedPlaceId = placeId
+        selectedByParticipantId = participantId
+        selectedAt = now
+    }
+
+    fun clearSelection(participantId: Long, now: Instant) {
+        selectedPlaceId = null
+        selectedByParticipantId = participantId
+        selectedAt = now
+    }
 }
 
 enum class BoardStatus { COLLECTING, CONFIRMED, CLOSED }

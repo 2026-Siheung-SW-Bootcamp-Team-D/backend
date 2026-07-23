@@ -56,10 +56,38 @@ class BoardController(private val service: BoardService, private val properties:
     fun patch(@PathVariable boardId: String, @Parameter(hidden = true) @CurrentParticipant principal: ParticipantPrincipal, @Valid @RequestBody request: PatchBoardRequest) = service.patch(boardId, principal, request)
 
     @GetMapping("/boards/{boardId}/invitation")
-    @Operation(summary = "현재 초대 정보 조회", description = "HOST에게 저장된 초대 코드 원문과 URL, 만료 시각을 반환합니다.")
+    @Operation(summary = "현재 초대 정보 조회", description = "보드의 모든 참여자가 저장된 초대 코드 원문과 URL, 만료 시각을 조회할 수 있습니다.")
     @SecurityRequirement(name = "participantToken")
     @RateLimit(permits = 60, windowSeconds = 60, key = RateLimitKey.PARTICIPANT, scope = RateLimitScope.PARTICIPANT_GLOBAL)
     fun invitation(@PathVariable boardId: String, @Parameter(hidden = true) @CurrentParticipant principal: ParticipantPrincipal) = service.invitation(boardId, principal, properties.frontendBaseUrl)
+
+    @PutMapping("/boards/{boardId}/selected-place")
+    @Operation(summary = "장소 선택", description = "현재 참여자가 보드의 공동 선택 장소를 변경합니다. 마지막 쓰기가 우선됩니다.")
+    @SecurityRequirement(name = "participantToken")
+    @ApiResponse(responseCode = "200", description = "선택 성공")
+    @ApiResponse(responseCode = "403", description = "다른 보드의 토큰")
+    @ApiResponse(responseCode = "404", description = "보드 또는 장소 없음(또는 ACTIVE 상태가 아님)")
+    @RateLimit(permits = 60, windowSeconds = 60, key = RateLimitKey.PARTICIPANT, scope = RateLimitScope.PARTICIPANT_GLOBAL)
+    fun putSelectedPlace(
+        @PathVariable boardId: String,
+        @Parameter(hidden = true) @CurrentParticipant principal: ParticipantPrincipal,
+        @Valid @RequestBody request: SelectPlaceRequest,
+    ) = service.selectPlace(boardId, request.placeId, principal)
+
+    @DeleteMapping("/boards/{boardId}/selected-place")
+    @Operation(summary = "장소 선택 해제", description = "현재 참여자가 보드의 공동 선택 장소를 해제합니다. 선택된 장소가 없어도 성공합니다.")
+    @SecurityRequirement(name = "participantToken")
+    @ApiResponse(responseCode = "204", description = "선택 해제 성공 또는 선택된 장소 없음")
+    @ApiResponse(responseCode = "403", description = "다른 보드의 토큰")
+    @ApiResponse(responseCode = "404", description = "보드 없음")
+    @RateLimit(permits = 60, windowSeconds = 60, key = RateLimitKey.PARTICIPANT, scope = RateLimitScope.PARTICIPANT_GLOBAL)
+    fun deleteSelectedPlace(
+        @PathVariable boardId: String,
+        @Parameter(hidden = true) @CurrentParticipant principal: ParticipantPrincipal,
+    ): ResponseEntity<Void> {
+        service.clearSelection(boardId, principal)
+        return ResponseEntity.noContent().build()
+    }
 
     @GetMapping("/invitations/{inviteCode}")
     @Operation(summary = "초대 확인", description = "인증 없이 초대 대상 보드와 참여 가능 여부를 확인합니다. IP당 분당 30회로 제한됩니다.")
