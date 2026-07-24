@@ -86,9 +86,35 @@ class AreaJobStateWriter(
     /**
      * Task 5: 새로운 구조로 작업을 성공 상태로 표시한다.
      * 참여자 중심점, 익명 isochrone, nullable 공통 영역, 기준점 리스트를 저장한다.
+     * 기준점(anchor)은 area_suggestion 테이블에 행으로 저장한다.
      */
     @Transactional
     fun markSucceededWithNewFormat(job: AreaSearchJob, computation: AreaComputationResult) {
+        // 기준점을 AreaSuggestion 엔티티로 변환 및 저장
+        // job.id는 claimNextJob()에서 save되었으므로 DB PK를 가짐
+        logger.debug("area_suggestion_save_start jobId=${job.publicId} dbId=${job.id} anchorCount=${computation.anchors.size}")
+
+        computation.anchors.forEachIndexed { index, anchor ->
+            val jobId = job.id ?: throw IllegalStateException("job.id is null but claimNextJob() should have persisted it. jobPublicId=${job.publicId}")
+            // anchorId는 anchor.anchorId를 사용하되, 고유성 보장을 위해 jobId와 조합
+            val uniqueAnchorId = "${job.publicId}_anchor_${index + 1}"
+            val suggestion = AreaSuggestion(
+                publicId = uniqueAnchorId,
+                jobId = jobId,
+                name = anchor.name,
+                lon = anchor.lon,
+                lat = anchor.lat,
+                providerPlaceId = null,
+                metricsJson = "{}",
+                reasonsJson = "{}",
+                rank = index + 1,
+                provider = "KAKAO",
+                centerDistanceMeters = anchor.centerDistanceMeters,
+            )
+            candidateRepository.save(suggestion)
+        }
+        logger.debug("area_suggestion_save_complete jobId=${job.publicId} count=${computation.anchors.size}")
+
         // 결과 JSON 구성 (새로운 P7 형식)
         val result = (mapper.createObjectNode() as ObjectNode).apply {
 
