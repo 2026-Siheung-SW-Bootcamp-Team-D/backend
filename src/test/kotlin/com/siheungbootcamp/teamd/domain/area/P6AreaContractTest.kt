@@ -304,4 +304,43 @@ class P6AreaContractTest(
 
         assertEquals(0, kakaoStubServer.tmapRequestCount, "TMAP 호출이 0이어야 함")
     }
+
+    @Test
+    fun `작업 성공 후 area_suggestion 테이블에 기준점 행이 저장된다`() {
+        val host = createBoard("기준점 저장 테스트", "호스트")
+        val member = inviteAndJoin(host, "참여자")
+        setOrigin(host, "호스트출발", 126.97, 37.55)
+        setOrigin(member, "참여자출발", 126.96, 37.54)
+
+        kakaoStubServer.setKeywordResponseMode(KakaoStubServer.ResponseMode.SUCCESS)
+        odsayStubServer.responseMode = OdsayStubServer.ResponseMode.SUCCESS
+
+        val postRes = mockMvc.post("/api/v1/boards/${host.boardId}/area-search-jobs") {
+            bearer(member.token)
+            contentType = MediaType.APPLICATION_JSON
+            content = """{"durationMin":45}"""
+        }.andReturn().response
+
+        val postData = objectMapper.readTree(postRes.contentAsString)
+        val jobId = postData.path("jobId").asText()
+
+        // 모든 작업 처리
+        for (i in 0 until 100) { if (!areaJobExecutor.processOne()) break }
+
+        val getRes = mockMvc.get("/api/v1/boards/${host.boardId}/area-search-jobs/$jobId") {
+            bearer(member.token)
+        }.andReturn().response
+        val getData = objectMapper.readTree(getRes.contentAsString)
+        assertEquals("SUCCEEDED", getData.path("status").asText())
+
+        // area_suggestion 테이블에서 this job의 anchors 개수 확인
+        val anchorsArray = getData.path("result").path("anchors")
+        val anchorCount = anchorsArray.size()
+
+        val dbCount = jdbcClient.sql(
+            "select count(*) as cnt from area_suggestion where job_id = (select id from area_search_job where public_id = :jobId)"
+        ).param("jobId", jobId).query(Int::class.java).single()
+
+        assertEquals(anchorCount, dbCount, "area_suggestion 테이블에 저장된 행 개수가 anchors 개수와 일치해야 함")
+    }
 }
