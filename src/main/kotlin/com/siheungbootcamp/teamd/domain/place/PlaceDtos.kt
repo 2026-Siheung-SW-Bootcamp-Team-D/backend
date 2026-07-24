@@ -100,6 +100,7 @@ data class PlaceListResponse(
  * 장소 후보, 주소, 주변 검색 결과를 통일된 구조로 반환합니다.
  */
 data class PlaceCandidateResponse(
+    val provider: String = "KAKAO",
     val items: List<CandidateItem>,
     val hint: String? = null,
 ) {
@@ -111,9 +112,8 @@ data class PlaceCandidateResponse(
         val providerPlaceId: String,
         val name: String,
         val category: String,
-        val internalCategory: String,
-        val addressName: String,
-        val roadAddressName: String,
+        val roadAddress: String?,
+        val jibunAddress: String?,
         val location: LocationResponse,
         val sourceUrl: String?,
         val distanceMeters: Int?,
@@ -121,17 +121,19 @@ data class PlaceCandidateResponse(
 }
 
 data class AddressCandidateResponse(
+    val provider: String = "KAKAO",
     val items: List<AddressItem>,
 ) {
     data class AddressItem(
-        val addressName: String,
-        val roadAddressName: String?,
-        val addressType: String,
+        val label: String,
+        val roadAddress: String?,
         val location: LocationResponse,
     )
 }
 
 data class CoordinateAddressResponse(
-    val roadAddressName: String?,
-    val addressName: String?,
+    val label: String?,
+    val roadAddress: String?,
+    val jibunAddress: String?,
+    val location: LocationResponse,
 )

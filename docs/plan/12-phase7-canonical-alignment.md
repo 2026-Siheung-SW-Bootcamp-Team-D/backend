@@ -711,7 +711,7 @@ curl -fsS http://localhost:8080/v3/api-docs > /tmp/teamd-openapi.json
 
 확인:
 
-- `화면연동명세서_v1.0.md`의 API 18개가 모두 존재
+- `API명세서_v1.1.md`의 canonical API 26개가 모두 존재
 - Vote·Course·Departure 경로 없음
 - `Place`, `Comment`, 지역 결과 필드명이 API 명세와 일치
 - `Authorization: Bearer` 보안 스키마 존재
@@ -746,7 +746,7 @@ git commit -m "P7 프론트 연동 계약과 실행 기준을 공개한다"
 
 | ID | 검증 | 완료 조건 |
 |---|---|---|
-| V7-1 | canonical OpenAPI | 화면 명세 API 18개 존재, 레거시 경로 없음 |
+| V7-1 | canonical OpenAPI | canonical API 26개 존재, 레거시 경로 없음 |
 | V7-2 | 검색 계약 | canonical 경로·DTO, 최대 15개 |
 | V7-3 | 주변 검색 | 공통 영역 밖 좌표 성공, 검색만으로 Place 미생성 |
 | V7-4 | 권한 | 모든 활성 참여자의 후보·좋아요·현재 선택 동작 |

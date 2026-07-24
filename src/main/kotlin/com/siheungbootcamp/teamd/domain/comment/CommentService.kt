@@ -133,6 +133,7 @@ class CommentService(
             commentId = comment.publicId,
             placeId = comment.place.publicId,
             authorParticipantId = comment.author.publicId,
+            authorNickname = comment.author.nickname,
             content = comment.body,
             createdAt = comment.createdAt,
         )

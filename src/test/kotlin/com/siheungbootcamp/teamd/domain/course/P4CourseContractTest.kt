@@ -401,11 +401,9 @@ class P4CourseContractTest(
         val confirmJson = objectMapper.readTree(confirmCourse(host, 1))
         val publicToken = confirmJson.path("publicUrl").asText().substringAfterLast("/")
 
-        mockMvc.patch("/api/v1/boards/${host.boardId}") {
-            bearer(host.token)
-            contentType = MediaType.APPLICATION_JSON
-            content = """{"status":"CLOSED"}"""
-        }.andExpect { status { isOk() } }
+        jdbcClient.sql("update board set status='CLOSED', updated_at=now() where public_id=:boardId")
+            .param("boardId", host.boardId)
+            .update()
 
         mockMvc.get("/api/v1/public/schedules/$publicToken") {}
             .andExpect {

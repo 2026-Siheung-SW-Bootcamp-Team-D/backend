@@ -72,14 +72,17 @@ class P1ContractTest(
     }
 
     @Test
-    fun `V1-4 멤버는 호스트 수정 API를 호출할 수 없다`() {
+    fun `V1-4 모든 참여자는 보드 기본 정보를 수정할 수 있다`() {
         val host = createBoard("권한 보드", "호스트")
         val member = join(host.inviteCode, "멤버")
         mockMvc.patch("/api/v1/boards/${host.boardId}") {
             bearer(member)
             contentType = MediaType.APPLICATION_JSON
             content = """{"name":"수정 이름"}"""
-        }.andExpect { status { isForbidden() }; jsonPath("$.error.code") { value("FORBIDDEN") } }
+        }.andExpect {
+            status { isOk() }
+            jsonPath("$.name") { value("수정 이름") }
+        }
     }
 
     @Test
@@ -206,9 +209,7 @@ class P1ContractTest(
     @Test
     fun `PATCH board는 이미 CLOSED인 보드의 재수정을 409로 거부한다`() {
         val host = createBoard("종료 재수정 보드", "호스트")
-        mockMvc.patch("/api/v1/boards/${host.boardId}") {
-            bearer(host.token); contentType = MediaType.APPLICATION_JSON; content = """{"status":"CLOSED"}"""
-        }.andExpect { status { isOk() } }
+        closeBoard(host.boardId)
         mockMvc.patch("/api/v1/boards/${host.boardId}") {
             bearer(host.token); contentType = MediaType.APPLICATION_JSON; content = """{"name":"수정 불가"}"""
         }.andExpect { status { isConflict() }; jsonPath("$.error.code") { value("RESOURCE_CONFLICT") } }
@@ -237,9 +238,7 @@ class P1ContractTest(
         }.andExpect { status { isNotFound() }; jsonPath("$.error.code") { value("INVITE_NOT_FOUND") } }
 
         val closed = createBoard("종료 참여 보드", "호스트")
-        mockMvc.patch("/api/v1/boards/${closed.boardId}") {
-            bearer(closed.token); contentType = MediaType.APPLICATION_JSON; content = """{"status":"CLOSED"}"""
-        }.andExpect { status { isOk() } }
+        closeBoard(closed.boardId)
         mockMvc.post("/api/v1/invitations/${closed.inviteCode}/participants") {
             contentType = MediaType.APPLICATION_JSON; content = """{"nickname":"멤버"}"""
         }.andExpect { status { isConflict() }; jsonPath("$.error.code") { value("RESOURCE_CONFLICT") } }
@@ -297,9 +296,7 @@ class P1ContractTest(
             jsonPath("$.items[1].origin", not(hasKey<String>("lon")))
             jsonPath("$.items[1].origin", not(hasKey<String>("lat")))
         }
-        mockMvc.patch("/api/v1/boards/${host.boardId}") {
-            bearer(host.token); contentType = MediaType.APPLICATION_JSON; content = """{"status":"CLOSED"}"""
-        }.andExpect { status { isOk() } }
+        closeBoard(host.boardId)
         mockMvc.patch("/api/v1/boards/${host.boardId}/participants/me") {
             bearer(member); contentType = MediaType.APPLICATION_JSON; content = """{"nickname":"새 이름"}"""
         }.andExpect { status { isConflict() }; jsonPath("$.error.code") { value("RESOURCE_CONFLICT") } }
@@ -319,6 +316,12 @@ class P1ContractTest(
             contentType = MediaType.APPLICATION_JSON; content = """{"nickname":"$nickname"}"""
         }.andExpect { status { isCreated() } }.andReturn().response.contentAsString
         return objectMapper.readTree(body)["participantToken"].asText()
+    }
+
+    private fun closeBoard(boardId: String) {
+        jdbcClient.sql("update board set status='CLOSED', updated_at=now() where public_id=:boardId")
+            .param("boardId", boardId)
+            .update()
     }
 
     private fun org.springframework.test.web.servlet.MockHttpServletRequestDsl.bearer(token: String) {

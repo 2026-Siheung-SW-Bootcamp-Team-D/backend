@@ -94,24 +94,24 @@ class AreaJobStateWriter(
         // job.id는 claimNextJob()에서 save되었으므로 DB PK를 가짐
         logger.debug("area_suggestion_save_start jobId=${job.publicId} dbId=${job.id} anchorCount=${computation.anchors.size}")
 
-        computation.anchors.forEachIndexed { index, anchor ->
+        val persistedAnchors = computation.anchors.mapIndexed { index, anchor ->
             val jobId = job.id ?: throw IllegalStateException("job.id is null but claimNextJob() should have persisted it. jobPublicId=${job.publicId}")
-            // anchorId는 anchor.anchorId를 사용하되, 고유성 보장을 위해 jobId와 조합
             val uniqueAnchorId = "${job.publicId}_anchor_${index + 1}"
             val suggestion = AreaSuggestion(
                 publicId = uniqueAnchorId,
                 jobId = jobId,
                 name = anchor.name,
-                lon = anchor.lon,
-                lat = anchor.lat,
-                providerPlaceId = null,
+                lon = anchor.location.lon,
+                lat = anchor.location.lat,
+                providerPlaceId = anchor.providerPlaceId,
                 metricsJson = "{}",
                 reasonsJson = "{}",
-                rank = index + 1,
-                provider = "KAKAO",
+                rank = anchor.rank,
+                provider = anchor.provider,
                 centerDistanceMeters = anchor.centerDistanceMeters,
             )
             candidateRepository.save(suggestion)
+            anchor.copy(anchorId = uniqueAnchorId)
         }
         logger.debug("area_suggestion_save_complete jobId=${job.publicId} count=${computation.anchors.size}")
 
@@ -146,14 +146,18 @@ class AreaJobStateWriter(
 
             // 기준점 리스트
             val anchorsArray = mapper.createArrayNode()
-            computation.anchors.forEach { anchor ->
+            persistedAnchors.forEach { anchor ->
                 anchorsArray.add(
                     (mapper.createObjectNode() as ObjectNode).apply {
                         put("anchorId", anchor.anchorId)
+                        put("provider", anchor.provider)
+                        if (anchor.providerPlaceId != null) put("providerPlaceId", anchor.providerPlaceId) else putNull("providerPlaceId")
+                        put("category", anchor.category)
                         put("name", anchor.name)
-                        put("lon", anchor.lon)
-                        put("lat", anchor.lat)
+                        if (anchor.roadAddress != null) put("roadAddress", anchor.roadAddress) else putNull("roadAddress")
+                        set("location", mapper.valueToTree(anchor.location))
                         put("centerDistanceMeters", anchor.centerDistanceMeters)
+                        put("rank", anchor.rank)
                     }
                 )
             }

@@ -120,12 +120,16 @@ class AreaService(
         val snapshot = mapper.readTree(job.snapshotJson)
         val participantCount = snapshot.path("participantIds").size()
         return CreateAreaSearchJobResponse(
-            jobId = job.publicId,
-            status = job.status,
-            estimatedExternalCalls = EstimatedExternalCalls(
-                odsay = participantCount,  // 참여자당 1회
-                kakaoLocal = AreaJobExecutor.MAX_KAKAO_CALLS,  // 상위 3개 조각 × 1개 키워드 = 최대 3회
-                tmapTransit = 0,            // TMAP 호출 안 함
+            job = AreaJobResponse(
+                jobId = job.publicId,
+                status = job.status,
+                durationMin = job.durationMin,
+                createdAt = job.createdAt,
+                estimatedExternalCalls = EstimatedExternalCalls(
+                    odsay = participantCount,
+                    kakaoLocal = AreaJobExecutor.MAX_KAKAO_CALLS,
+                    tmapTransit = 0,
+                ),
             ),
         )
     }
@@ -200,11 +204,15 @@ class AreaService(
         }
 
         return GetAreaSearchJobResponse(
-            jobId = job.publicId,
-            status = job.status,
-            durationMin = job.durationMin,
+            job = AreaJobResponse(
+                jobId = job.publicId,
+                status = job.status,
+                durationMin = job.durationMin,
+                createdAt = job.createdAt,
+                resultSource = if (job.status == "SUCCEEDED") "COMPUTED" else null,
+                errorCode = job.errorCode,
+            ),
             result = result,
-            errorCode = job.errorCode,
         )
     }
 }

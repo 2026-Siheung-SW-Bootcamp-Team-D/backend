@@ -33,8 +33,17 @@ class PlaceService(
     private val checks: AuthorizationChecks,
     private val usageCheckers: List<PlaceUsageChecker> = emptyList(),
 ) {
-    fun searchKeyword(boardId: String, principal: ParticipantPrincipal, query: String, lon: Double?, lat: Double?, radius: Int?): PlaceCandidateResponse {
+    fun searchKeyword(
+        boardId: String,
+        principal: ParticipantPrincipal,
+        query: String,
+        lon: Double?,
+        lat: Double?,
+        radius: Int?,
+        provider: String = "KAKAO",
+    ): PlaceCandidateResponse {
         checks.requireBoard(principal, boardId)
+        if (provider != "KAKAO") throw BusinessException(ErrorCode.INVALID_ARGUMENT)
         validateQuery(query)
         validateSearchLocation(lon, lat, radius)
 
@@ -45,9 +54,8 @@ class PlaceService(
                     providerPlaceId = c.providerPlaceId,
                     name = c.name,
                     category = c.category,
-                    internalCategory = c.internalCategory,
-                    addressName = c.addressName,
-                    roadAddressName = c.roadAddressName,
+                    roadAddress = c.roadAddressName.ifBlank { null },
+                    jibunAddress = c.addressName.ifBlank { null },
                     location = LocationResponse(c.lon, c.lat),
                     sourceUrl = c.providerPlaceUrl,
                     distanceMeters = c.distanceMeters,
@@ -65,9 +73,8 @@ class PlaceService(
         return AddressCandidateResponse(
             items = candidates.map { c ->
                 AddressCandidateResponse.AddressItem(
-                    addressName = c.addressName,
-                    roadAddressName = c.roadAddressName,
-                    addressType = c.addressType,
+                    label = c.addressName,
+                    roadAddress = c.roadAddressName,
                     location = LocationResponse(c.lon, c.lat),
                 )
             },
@@ -80,8 +87,10 @@ class PlaceService(
 
         val result = kakao.coord2Address(lon, lat)
         return CoordinateAddressResponse(
-            roadAddressName = result.roadAddressName,
-            addressName = result.addressName,
+            label = result.roadAddressName ?: result.addressName,
+            roadAddress = result.roadAddressName,
+            jibunAddress = result.addressName,
+            location = LocationResponse(lon, lat),
         )
     }
 
@@ -137,7 +146,7 @@ class PlaceService(
         }
 
         // 검증: q 길이 (2자 이상)
-        if (!trimmedQuery.isNullOrEmpty() && trimmedQuery.length < 2) {
+        if (!trimmedQuery.isNullOrEmpty() && trimmedQuery.length !in 2..60) {
             throw BusinessException(ErrorCode.INVALID_ARGUMENT)
         }
 
@@ -167,9 +176,8 @@ class PlaceService(
                     providerPlaceId = c.providerPlaceId,
                     name = c.name,
                     category = c.category,
-                    internalCategory = c.internalCategory,
-                    addressName = c.addressName,
-                    roadAddressName = c.roadAddressName,
+                    roadAddress = c.roadAddressName.ifBlank { null },
+                    jibunAddress = c.addressName.ifBlank { null },
                     location = LocationResponse(c.lon, c.lat),
                     sourceUrl = c.providerPlaceUrl,
                     distanceMeters = c.distanceMeters,
@@ -208,7 +216,7 @@ class PlaceService(
             internalCategory = request.category ?: "기타",
             provider = request.source.sourceProvider,
             providerPlaceId = request.source.providerPlaceId,
-            providerPlaceUrl = validateProviderUrl(request.source.sourceUrl),
+            providerPlaceUrl = validateProviderUrl(request.source.sourceUrl, request.source.sourceProvider),
             source = request.source.inputMethod,
         )
 
@@ -373,7 +381,7 @@ class PlaceService(
     }
 
     private fun validateQuery(query: String) {
-        if (query.length < 2 || query.length > 80) {
+        if (query.length < 2 || query.length > 60) {
             throw BusinessException(ErrorCode.INVALID_ARGUMENT)
         }
         // Check if query looks like a URL
@@ -430,14 +438,26 @@ class PlaceService(
         private val VALID_CATEGORIES = setOf("RESTAURANT", "CAFE", "PLAY", "BAR", "CULTURE", "ATTRACTION", "TRANSIT", "ETC")
     }
 
-    private fun validateProviderUrl(url: String?): String? {
-        if (url.isNullOrBlank()) return null
+    private fun validateProviderUrl(url: String?, provider: String): String? {
+        if (url.isNullOrBlank()) {
+            if (provider == "MANUAL") return null
+            return null
+        }
         val uri = try {
             URI(url)
         } catch (e: Exception) {
             throw BusinessException(ErrorCode.INVALID_ARGUMENT)
         }
         if (uri.scheme != "https" || uri.host.isNullOrBlank()) throw BusinessException(ErrorCode.INVALID_ARGUMENT)
+        val host = uri.host.lowercase()
+        val allowed = when (provider) {
+            "KAKAO" -> host == "place.map.kakao.com"
+            "NAVER" -> host == "map.naver.com" || host == "naver.me" || host.endsWith(".map.naver.com")
+            "EXTERNAL" -> true
+            "MANUAL" -> false
+            else -> false
+        }
+        if (!allowed) throw BusinessException(ErrorCode.INVALID_ARGUMENT)
         return url
     }
 }

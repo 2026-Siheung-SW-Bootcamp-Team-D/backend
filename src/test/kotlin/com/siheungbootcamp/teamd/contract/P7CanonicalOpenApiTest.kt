@@ -12,6 +12,8 @@ import org.springframework.test.web.servlet.get
 import org.testcontainers.junit.jupiter.Container
 import org.testcontainers.junit.jupiter.Testcontainers
 import org.testcontainers.postgresql.PostgreSQLContainer
+import tools.jackson.databind.ObjectMapper
+import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
@@ -33,6 +35,7 @@ import kotlin.test.assertTrue
 ])
 class P7CanonicalOpenApiTest(
     @Autowired private val mockMvc: MockMvc,
+    @Autowired private val objectMapper: ObjectMapper,
 ) {
     @Test
     fun `canonical paths are exposed and legacy paths are hidden`() {
@@ -40,11 +43,34 @@ class P7CanonicalOpenApiTest(
             .andExpect { status { isOk() } }
             .andReturn().response.contentAsString
 
-        // Canonical paths must exist (Task 2 paths)
-        assertTrue(api.contains("/api/v1/boards/{boardId}/search/places"), "canonical 검색 장소 경로 필수")
-        assertTrue(api.contains("/api/v1/boards/{boardId}/search/addresses"), "canonical 검색 주소 경로 필수")
-        assertTrue(api.contains("/api/v1/boards/{boardId}/search/reverse-geocode"), "canonical 역지오코딩 경로 필수")
-        assertTrue(api.contains("/api/v1/boards/{boardId}/search/nearby-places"), "canonical 주변 검색 경로 필수")
+        val paths = objectMapper.readTree(api).path("paths")
+        val expectedOperations = mapOf(
+            "/api/v1/boards" to setOf("post"),
+            "/api/v1/boards/{boardId}" to setOf("get", "patch"),
+            "/api/v1/boards/{boardId}/invitation" to setOf("get"),
+            "/api/v1/invitations/{inviteCode}" to setOf("get"),
+            "/api/v1/invitations/{inviteCode}/participants" to setOf("post"),
+            "/api/v1/boards/{boardId}/participants" to setOf("get"),
+            "/api/v1/boards/{boardId}/participants/me" to setOf("patch"),
+            "/api/v1/boards/{boardId}/search/places" to setOf("get"),
+            "/api/v1/boards/{boardId}/search/addresses" to setOf("get"),
+            "/api/v1/boards/{boardId}/search/reverse-geocode" to setOf("get"),
+            "/api/v1/boards/{boardId}/search/nearby-places" to setOf("get"),
+            "/api/v1/boards/{boardId}/places" to setOf("get", "post"),
+            "/api/v1/boards/{boardId}/places/{placeId}" to setOf("get", "delete"),
+            "/api/v1/boards/{boardId}/places/{placeId}/likes/me" to setOf("put", "delete"),
+            "/api/v1/boards/{boardId}/places/{placeId}/comments" to setOf("get", "post"),
+            "/api/v1/boards/{boardId}/places/{placeId}/comments/{commentId}" to setOf("patch", "delete"),
+            "/api/v1/boards/{boardId}/selected-place" to setOf("put", "delete"),
+            "/api/v1/boards/{boardId}/area-search-jobs" to setOf("post"),
+            "/api/v1/boards/{boardId}/area-search-jobs/{jobId}" to setOf("get"),
+        )
+        expectedOperations.forEach { (path, methods) ->
+            methods.forEach { method ->
+                assertTrue(paths.path(path).has(method), "$method $path 경로 필수")
+            }
+        }
+        assertEquals(26, expectedOperations.values.sumOf { it.size }, "canonical API는 26개 연산이어야 함")
 
         // Task 2: Legacy place search paths must not exist
         assertFalse(api.contains("/place-candidates"), "레거시 장소 후보 경로 제거됨")

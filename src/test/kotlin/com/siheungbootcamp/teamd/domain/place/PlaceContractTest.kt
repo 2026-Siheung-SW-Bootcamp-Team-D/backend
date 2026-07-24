@@ -53,6 +53,12 @@ class PlaceContractTest(
             .andReturn().response.contentAsString
 
         val candidate = objectMapper.readTree(searchResult).path("items")[0]
+        val searchJson = objectMapper.readTree(searchResult)
+        assertEquals("KAKAO", searchJson.path("provider").asText())
+        assertTrue(candidate.has("roadAddress"))
+        assertTrue(candidate.has("jibunAddress"))
+        assertFalse(candidate.has("roadAddressName"))
+        assertFalse(candidate.has("addressName"))
         val placeId = candidate.path("providerPlaceId").asText()
 
         // 장소 등록 (canonical nested 구조)
@@ -119,6 +125,15 @@ class PlaceContractTest(
             .query(Int::class.java)
             .single()
         assertEquals(0, count, "검색만으로는 place가 생성되지 않아야 함")
+    }
+
+    @Test
+    fun `검색어는 최대 60자까지만 허용한다`() {
+        val host = createBoard("검색 길이 보드", "호스트")
+        mockMvc.get("/api/v1/boards/${host.boardId}/search/places") {
+            bearer(host.token)
+            param("q", "가".repeat(61))
+        }.andExpect { status { isBadRequest() } }
     }
 
     @Test
@@ -283,6 +298,48 @@ class PlaceContractTest(
               }
             }
             """.trimIndent()
+        }.andExpect {
+            status { isBadRequest() }
+            jsonPath("$.error.code") { value("INVALID_ARGUMENT") }
+        }
+    }
+
+    @Test
+    fun `공급자와 출처 URL 호스트가 다르면 장소 등록을 거부한다`() {
+        val host = createBoard("URL 공급자 검증 보드", "호스트")
+
+        mockMvc.post("/api/v1/boards/${host.boardId}/places") {
+            bearer(host.token)
+            contentType = MediaType.APPLICATION_JSON
+            content = """
+            {
+              "name": "위장된 카카오 장소",
+              "category": "RESTAURANT",
+              "roadAddress": null,
+              "jibunAddress": null,
+              "location": {"lon": 126.7, "lat": 37.3},
+              "source": {
+                "sourceProvider": "KAKAO",
+                "providerPlaceId": "test123",
+                "sourceUrl": "https://example.com/place/123",
+                "inputMethod": "SEARCH_PICK"
+              }
+            }
+            """.trimIndent()
+        }.andExpect {
+            status { isBadRequest() }
+            jsonPath("$.error.code") { value("INVALID_ARGUMENT") }
+        }
+    }
+
+    @Test
+    fun `장소 검색은 지원하지 않는 provider를 거부한다`() {
+        val host = createBoard("검색 공급자 검증 보드", "호스트")
+
+        mockMvc.get("/api/v1/boards/${host.boardId}/search/places") {
+            bearer(host.token)
+            param("q", "테스트 장소")
+            param("provider", "NAVER")
         }.andExpect {
             status { isBadRequest() }
             jsonPath("$.error.code") { value("INVALID_ARGUMENT") }

@@ -1,5 +1,6 @@
 package com.siheungbootcamp.teamd.domain.area
 
+import com.siheungbootcamp.teamd.domain.board.RequiresBoardOpen
 import com.siheungbootcamp.teamd.global.auth.CurrentParticipant
 import com.siheungbootcamp.teamd.global.auth.ParticipantPrincipal
 import io.swagger.v3.oas.annotations.Operation
@@ -29,6 +30,7 @@ class AreaController(
     @ApiResponse(responseCode = "202", description = "작업 접수, Location 헤더로 조회 위치 안내")
     @ApiResponse(responseCode = "400", description = "대상 참여자 1명 이하")
     @ApiResponse(responseCode = "422", description = "출발지 미등록 참여자 포함")
+    @RequiresBoardOpen
     fun createAreaSearchJob(
         @PathVariable boardId: String,
         @Parameter(hidden = true) @CurrentParticipant principal: ParticipantPrincipal,
@@ -41,7 +43,7 @@ class AreaController(
         )
         return ResponseEntity
             .accepted()
-            .location(URI.create("/api/v1/boards/$boardId/area-search-jobs/${response.jobId}"))
+            .location(URI.create("/api/v1/boards/$boardId/area-search-jobs/${response.job.jobId}"))
             .body(response)
     }
 

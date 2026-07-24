@@ -57,6 +57,7 @@ class P3CommentContractTest(
             .andReturn().response.contentAsString
         val commentId = objectMapper.readTree(commentBody).path("commentId").asText()
         assertEquals("여기 웨이팅이 길 수 있어요.", objectMapper.readTree(commentBody).path("content").asText())
+        assertEquals("호스트", objectMapper.readTree(commentBody).path("authorNickname").asText())
 
         // 댓글 목록 조회
         val listBody = mockMvc.get("/api/v1/boards/${host.boardId}/places/${place.placeId}/comments") {

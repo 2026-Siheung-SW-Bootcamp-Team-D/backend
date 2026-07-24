@@ -33,6 +33,7 @@ data class CommentResponse(
     val commentId: String,
     val placeId: String,
     val authorParticipantId: String,
+    val authorNickname: String,
     val content: String,
     val createdAt: Instant,
 )

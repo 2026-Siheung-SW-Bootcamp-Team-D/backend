@@ -181,6 +181,55 @@ class P7CanonicalFlowContractTest(
         assertEquals(before, after, "주변 검색만으로는 place가 생성되지 않아야 함")
     }
 
+    @Test
+    fun `닫힌 보드는 좋아요 댓글 현재 선택 지역 탐색 쓰기를 거부한다`() {
+        val host = createBoard("닫힌 보드", "호스트")
+        val place = createPlace(host, "닫기 전 후보")
+        jdbcClient.sql("update board set status='CLOSED', updated_at=now() where public_id=:boardId")
+            .param("boardId", host.boardId)
+            .update()
+
+        mockMvc.put("/api/v1/boards/${host.boardId}/places/${place.placeId}/likes/me") {
+            bearer(host.token)
+        }.andExpect { status { isConflict() } }
+
+        mockMvc.post("/api/v1/boards/${host.boardId}/places/${place.placeId}/comments") {
+            bearer(host.token)
+            contentType = MediaType.APPLICATION_JSON
+            content = """{"content":"닫힌 뒤 댓글"}"""
+        }.andExpect { status { isConflict() } }
+
+        mockMvc.put("/api/v1/boards/${host.boardId}/selected-place") {
+            bearer(host.token)
+            contentType = MediaType.APPLICATION_JSON
+            content = """{"placeId":"${place.placeId}"}"""
+        }.andExpect { status { isConflict() } }
+
+        mockMvc.post("/api/v1/boards/${host.boardId}/area-search-jobs") {
+            bearer(host.token)
+            contentType = MediaType.APPLICATION_JSON
+            content = """{"durationMin":30}"""
+        }.andExpect { status { isConflict() } }
+    }
+
+    @Test
+    fun `기본 프로필에서 레거시 실제 경로는 404다`() {
+        val host = createBoard("레거시 격리 보드", "호스트")
+
+        listOf(
+            "/api/v1/boards/${host.boardId}/votes",
+            "/api/v1/boards/${host.boardId}/course-draft",
+            "/api/v1/boards/${host.boardId}/participants/me/departure-guide",
+        ).forEach { path ->
+            mockMvc.get(path) {
+                bearer(host.token)
+            }.andExpect { status { isNotFound() } }
+        }
+
+        mockMvc.get("/api/v1/public/schedules/not-found")
+            .andExpect { status { isNotFound() } }
+    }
+
     private fun createBoard(name: String, nickname: String): CreatedBoard {
         val body = mockMvc.post("/api/v1/boards") {
             contentType = MediaType.APPLICATION_JSON

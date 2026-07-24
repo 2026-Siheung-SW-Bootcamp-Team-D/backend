@@ -333,6 +333,11 @@ class AreaJobExecutor(
         val seenPlaceIds = mutableSetOf<String>()
 
         for (query in anchorQueries) {
+            val anchorCategory = when (query) {
+                "지하철역" -> "SUBWAY_STATION"
+                "기차역" -> "TRAIN_STATION"
+                else -> "BUS_TERMINAL"
+            }
             try {
                 val results = kakaoClient.searchKeyword(query, centerLon, centerLat, radius = 20_000, size = 15)
                 for (result in results) {
@@ -343,10 +348,14 @@ class AreaJobExecutor(
                     anchors.add(
                         AreaAnchorDto(
                             anchorId = "anchor_${result.providerPlaceId}",
+                            provider = "KAKAO",
+                            providerPlaceId = result.providerPlaceId,
+                            category = anchorCategory,
                             name = result.name,
-                            lon = result.lon,
-                            lat = result.lat,
+                            roadAddress = result.roadAddressName.ifBlank { null },
+                            location = ParticipantCenterDto(result.lon, result.lat),
                             centerDistanceMeters = distanceMeters,
+                            rank = 0,
                         )
                     )
                 }
@@ -361,6 +370,7 @@ class AreaJobExecutor(
                 .thenBy { it.name }
                 .thenBy { it.anchorId })
             .take(3)
+            .mapIndexed { index, anchor -> anchor.copy(rank = index + 1) }
 
         stateWriter.updateProgress(job, "AREA_ANCHOR_COLLECTION", "found ${sortedAnchors.size} anchors")
 
