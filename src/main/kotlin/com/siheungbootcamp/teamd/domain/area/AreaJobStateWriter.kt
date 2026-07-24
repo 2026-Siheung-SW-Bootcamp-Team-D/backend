@@ -86,28 +86,9 @@ class AreaJobStateWriter(
     /**
      * Task 5: 새로운 구조로 작업을 성공 상태로 표시한다.
      * 참여자 중심점, 익명 isochrone, nullable 공통 영역, 기준점 리스트를 저장한다.
-     * 기준점(anchor)은 area_suggestion 테이블에 행으로 저장한다.
      */
     @Transactional
     fun markSucceededWithNewFormat(job: AreaSearchJob, computation: AreaComputationResult) {
-        // 기준점을 AreaSuggestion 엔티티로 변환 및 저장
-        computation.anchors.forEachIndexed { index, anchor ->
-            val suggestion = AreaSuggestion(
-                publicId = anchor.anchorId,
-                jobId = job.id!!,
-                name = anchor.name,
-                lon = anchor.lon,
-                lat = anchor.lat,
-                providerPlaceId = null,
-                metricsJson = "{}",
-                reasonsJson = "{}",
-                rank = index + 1,
-                provider = "KAKAO",
-                centerDistanceMeters = anchor.centerDistanceMeters,
-            )
-            candidateRepository.save(suggestion)
-        }
-
         // 결과 JSON 구성 (새로운 P7 형식)
         val result = (mapper.createObjectNode() as ObjectNode).apply {
 
