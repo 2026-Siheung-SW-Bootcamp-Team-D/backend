@@ -104,15 +104,16 @@ class P6CandidateBoardContractTest(
             content = """
             {
               "name": "$name",
-              "lon": 126.5,
-              "lat": 37.5,
-              "addressName": "서울시 강남구",
-              "roadAddressName": "서울시 강남구 테헤란로",
-              "internalCategory": "RESTAURANT",
-              "provider": "KAKAO",
-              "providerPlaceId": "12345",
-              "providerPlaceUrl": "https://place.map.kakao.com/12345",
-              "source": "MANUAL_PIN"
+              "category": "RESTAURANT",
+              "roadAddress": "서울시 강남구 테헤란로",
+              "jibunAddress": "서울시 강남구",
+              "location": {"lon": 126.5, "lat": 37.5},
+              "source": {
+                "sourceProvider": "KAKAO",
+                "providerPlaceId": "12345",
+                "sourceUrl": "https://place.map.kakao.com/12345",
+                "inputMethod": "SEARCH_PICK"
+              }
             }
             """.trimIndent()
         }.andExpect { status { isCreated() } }

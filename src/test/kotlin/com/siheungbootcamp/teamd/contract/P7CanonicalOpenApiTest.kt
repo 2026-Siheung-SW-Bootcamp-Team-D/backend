@@ -44,7 +44,7 @@ class P7CanonicalOpenApiTest(
         assertTrue(api.contains("/api/v1/boards/{boardId}/search/places"), "canonical 검색 장소 경로 필수")
         assertTrue(api.contains("/api/v1/boards/{boardId}/search/addresses"), "canonical 검색 주소 경로 필수")
         assertTrue(api.contains("/api/v1/boards/{boardId}/search/reverse-geocode"), "canonical 역지오코딩 경로 필수")
-        // Task 3에서 구현: assertTrue(api.contains("/api/v1/boards/{boardId}/search/nearby-places"), "canonical 주변 검색 경로 필수")
+        assertTrue(api.contains("/api/v1/boards/{boardId}/search/nearby-places"), "canonical 주변 검색 경로 필수")
 
         // Task 2: Legacy place search paths must not exist
         assertFalse(api.contains("/place-candidates"), "레거시 장소 후보 경로 제거됨")

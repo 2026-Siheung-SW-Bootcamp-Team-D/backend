@@ -12,7 +12,7 @@ import com.siheungbootcamp.teamd.infra.external.kakao.KakaoLocalClient
 import org.springframework.data.domain.Pageable
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
-import java.net.URL
+import java.net.URI
 
 /**
  * 장소 검색·등록·조회·삭제의 비즈니스 로직을 담당한다.
@@ -192,6 +192,10 @@ class PlaceService(
         if (!validInputMethods.contains(request.source.inputMethod)) {
             throw BusinessException(ErrorCode.INVALID_ARGUMENT)
         }
+        val validSourceProviders = setOf("KAKAO", "NAVER", "EXTERNAL", "MANUAL")
+        if (request.source.sourceProvider !in validSourceProviders) {
+            throw BusinessException(ErrorCode.INVALID_ARGUMENT)
+        }
 
         val place = Place(
             board = board,
@@ -342,8 +346,12 @@ class PlaceService(
     private fun toResponse(place: Place, commentCount: Int, likeCount: Int = 0, likedByMe: Boolean = false, selected: Boolean = false): PlaceResponse {
         return PlaceResponse(
             placeId = place.publicId,
-            status = if (place.deletedAt != null) "ARCHIVED" else "ACTIVE",
+            boardId = place.board.publicId,
+            status = place.status.name,
             name = place.name,
+            category = place.internalCategory,
+            roadAddress = place.roadAddressName,
+            jibunAddress = place.addressName,
             location = LocationDto(
                 lon = place.lon,
                 lat = place.lat,
@@ -360,6 +368,7 @@ class PlaceService(
             likeCount = likeCount,
             likedByMe = likedByMe,
             selected = selected,
+            archivedAt = place.deletedAt,
         )
     }
 
@@ -423,13 +432,12 @@ class PlaceService(
 
     private fun validateProviderUrl(url: String?): String? {
         if (url.isNullOrBlank()) return null
-        val allowedHosts = setOf("place.map.kakao.com")
-        val host = try {
-            URL(url).host
+        val uri = try {
+            URI(url)
         } catch (e: Exception) {
             throw BusinessException(ErrorCode.INVALID_ARGUMENT)
         }
-        if (!allowedHosts.contains(host)) throw BusinessException(ErrorCode.INVALID_ARGUMENT)
+        if (uri.scheme != "https" || uri.host.isNullOrBlank()) throw BusinessException(ErrorCode.INVALID_ARGUMENT)
         return url
     }
 }

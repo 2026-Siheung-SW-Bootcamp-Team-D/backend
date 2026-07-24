@@ -495,15 +495,16 @@ class P4CourseContractTest(
             content = """
             {
               "name": "$name",
-              "lon": $lon,
-              "lat": $lat,
-              "addressName": "서울시",
-              "roadAddressName": "서울시 어딘가",
-              "internalCategory": "RESTAURANT",
-              "provider": null,
-              "providerPlaceId": null,
-              "providerPlaceUrl": null,
-              "source": "MANUAL_PIN"
+              "category": "RESTAURANT",
+              "roadAddress": "서울시 어딘가",
+              "jibunAddress": "서울시",
+              "location": {"lon": $lon, "lat": $lat},
+              "source": {
+                "sourceProvider": "MANUAL",
+                "providerPlaceId": null,
+                "sourceUrl": null,
+                "inputMethod": "MANUAL_PIN"
+              }
             }
             """.trimIndent()
         }.andExpect { status { isCreated() } }.andReturn().response.contentAsString

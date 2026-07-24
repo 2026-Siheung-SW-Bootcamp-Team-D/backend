@@ -2,6 +2,8 @@ package com.siheungbootcamp.teamd.domain.place
 
 import jakarta.validation.constraints.DecimalMax
 import jakarta.validation.constraints.DecimalMin
+import jakarta.validation.Valid
+import jakarta.validation.constraints.NotBlank
 import jakarta.validation.constraints.Size
 import java.time.Instant
 
@@ -22,7 +24,7 @@ data class LocationDto(
  * 이 정보는 사용자가 검색 결과를 확인하거나 원본을 탐색할 때 사용됩니다.
  */
 data class SourceDto(
-    @field:Size(min = 1, max = 20) val sourceProvider: String,
+    @field:NotBlank @field:Size(max = 20) val sourceProvider: String,
     @field:Size(max = 100) val providerPlaceId: String?,
     @field:Size(max = 2048) val sourceUrl: String?,
     @field:Size(min = 1, max = 50) val inputMethod: String,
@@ -48,12 +50,12 @@ data class PlaceSourceResponse(
  * 중첩 구조의 location과 source를 포함합니다.
  */
 data class CreatePlaceRequest(
-    @field:Size(min = 1, max = 80) val name: String,
+    @field:NotBlank @field:Size(max = 80) val name: String,
     @field:Size(max = 100) val category: String?,
     @field:Size(max = 200) val roadAddress: String?,
     @field:Size(max = 200) val jibunAddress: String?,
-    val location: LocationDto,
-    val source: SourceDto,
+    @field:Valid val location: LocationDto,
+    @field:Valid val source: SourceDto,
 )
 
 // Response DTOs
@@ -64,8 +66,12 @@ data class CreatePlaceRequest(
  */
 data class PlaceResponse(
     val placeId: String,
+    val boardId: String,
     val status: String,
     val name: String,
+    val category: String,
+    val roadAddress: String?,
+    val jibunAddress: String?,
     val location: LocationDto,
     val source: SourceDto,
     val createdByParticipantId: String,
@@ -74,6 +80,7 @@ data class PlaceResponse(
     val likeCount: Int = 0,
     val likedByMe: Boolean = false,
     val selected: Boolean = false,
+    val archivedAt: Instant?,
 )
 
 data class PlaceListResponse(

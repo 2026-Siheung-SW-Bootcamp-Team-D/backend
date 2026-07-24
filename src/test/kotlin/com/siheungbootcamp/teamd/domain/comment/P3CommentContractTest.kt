@@ -335,15 +335,16 @@ class P3CommentContractTest(
             content = """
             {
               "name": "$name",
-              "lon": 126.7,
-              "lat": 37.3,
-              "addressName": "서울시",
-              "roadAddressName": "서울시",
-              "internalCategory": "RESTAURANT",
-              "provider": null,
-              "providerPlaceId": null,
-              "providerPlaceUrl": null,
-              "source": "MANUAL_PIN"
+              "category": "RESTAURANT",
+              "roadAddress": "서울시",
+              "jibunAddress": "서울시",
+              "location": {"lon": 126.7, "lat": 37.3},
+              "source": {
+                "sourceProvider": "MANUAL",
+                "providerPlaceId": null,
+                "sourceUrl": null,
+                "inputMethod": "MANUAL_PIN"
+              }
             }
             """.trimIndent()
         }.andExpect { status { isCreated() } }.andReturn().response.contentAsString

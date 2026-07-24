@@ -87,6 +87,11 @@ class PlaceContractTest(
         assertEquals(true, place.has("source"), "응답에 source nested 객체가 있어야 함")
         assertEquals(true, place.has("createdByParticipantId"), "응답에 createdByParticipantId가 있어야 함")
         assertEquals(true, place.has("status"), "응답에 status가 있어야 함")
+        assertEquals(host.boardId, place.path("boardId").asText())
+        assertEquals(candidate.path("category").asText(), place.path("category").asText())
+        assertEquals(true, place.has("roadAddress"))
+        assertEquals(true, place.has("jibunAddress"))
+        assertEquals(true, place.has("archivedAt"))
 
         // 목록 조회
         val listResult = mockMvc.get("/api/v1/boards/${host.boardId}/places") {
@@ -228,15 +233,16 @@ class PlaceContractTest(
             content = """
             {
               "name": "테스트 장소",
-              "lon": 126.7,
-              "lat": 37.3,
-              "addressName": "서울시",
-              "roadAddressName": "서울시",
-              "internalCategory": "RESTAURANT",
-              "provider": "KAKAO",
-              "providerPlaceId": "test123",
-              "providerPlaceUrl": "https://place.map.kakao.com/123",
-              "source": "SEARCH_SELECT"
+              "category": "RESTAURANT",
+              "roadAddress": "서울시",
+              "jibunAddress": "서울시",
+              "location": {"lon": 126.7, "lat": 37.3},
+              "source": {
+                "sourceProvider": "KAKAO",
+                "providerPlaceId": "test123",
+                "sourceUrl": "https://place.map.kakao.com/123",
+                "inputMethod": "SEARCH_PICK"
+              }
             }
             """.trimIndent()
         }.andExpect { status { isCreated() } }
@@ -256,8 +262,8 @@ class PlaceContractTest(
     }
 
     @Test
-    fun `V2-10 비허용 도메인 URL은 400 INVALID_ARGUMENT를 반환한다`() {
-        val host = createBoard("URL 도메인 검증 보드", "호스트")
+    fun `V2-10 HTTPS가 아닌 출처 URL은 400 INVALID_ARGUMENT를 반환한다`() {
+        val host = createBoard("URL 스킴 검증 보드", "호스트")
 
         mockMvc.post("/api/v1/boards/${host.boardId}/places") {
             bearer(host.token)
@@ -265,15 +271,16 @@ class PlaceContractTest(
             content = """
             {
               "name": "테스트",
-              "lon": 126.7,
-              "lat": 37.3,
-              "addressName": "서울시",
-              "roadAddressName": "서울시",
-              "internalCategory": "RESTAURANT",
-              "provider": "KAKAO",
-              "providerPlaceId": "test123",
-              "providerPlaceUrl": "https://malicious.com",
-              "source": "MANUAL_PIN"
+              "category": "RESTAURANT",
+              "roadAddress": "서울시",
+              "jibunAddress": "서울시",
+              "location": {"lon": 126.7, "lat": 37.3},
+              "source": {
+                "sourceProvider": "EXTERNAL",
+                "providerPlaceId": "test123",
+                "sourceUrl": "http://example.com/place/123",
+                "inputMethod": "EXTERNAL_LINK"
+              }
             }
             """.trimIndent()
         }.andExpect {
@@ -359,15 +366,16 @@ class PlaceContractTest(
             content = """
             {
               "name": "$name",
-              "lon": $lon,
-              "lat": $lat,
-              "addressName": null,
-              "roadAddressName": null,
-              "internalCategory": "$category",
-              "provider": null,
-              "providerPlaceId": null,
-              "providerPlaceUrl": null,
-              "source": "MANUAL_PIN"
+              "category": "$category",
+              "roadAddress": null,
+              "jibunAddress": null,
+              "location": {"lon": $lon, "lat": $lat},
+              "source": {
+                "sourceProvider": "MANUAL",
+                "providerPlaceId": null,
+                "sourceUrl": null,
+                "inputMethod": "MANUAL_PIN"
+              }
             }
             """.trimIndent()
         }.andExpect { status { isCreated() } }
@@ -385,15 +393,16 @@ class PlaceContractTest(
             content = """
             {
               "name": "테스트 장소",
-              "lon": 126.7,
-              "lat": 37.3,
-              "addressName": "서울시",
-              "roadAddressName": "서울시",
-              "internalCategory": "RESTAURANT",
-              "provider": "KAKAO",
-              "providerPlaceId": "test123",
-              "providerPlaceUrl": "https://place.map.kakao.com/123",
-              "source": "SEARCH_SELECT"
+              "category": "RESTAURANT",
+              "roadAddress": "서울시",
+              "jibunAddress": "서울시",
+              "location": {"lon": 126.7, "lat": 37.3},
+              "source": {
+                "sourceProvider": "KAKAO",
+                "providerPlaceId": "test123",
+                "sourceUrl": "https://place.map.kakao.com/123",
+                "inputMethod": "SEARCH_PICK"
+              }
             }
             """.trimIndent()
         }.andExpect { status { isCreated() } }
@@ -423,15 +432,16 @@ class PlaceContractTest(
             content = """
             {
               "name": "테스트 장소 1",
-              "lon": 126.7,
-              "lat": 37.3,
-              "addressName": "서울시",
-              "roadAddressName": "서울시",
-              "internalCategory": "RESTAURANT",
-              "provider": "KAKAO",
-              "providerPlaceId": "test123",
-              "providerPlaceUrl": "https://place.map.kakao.com/123",
-              "source": "SEARCH_SELECT"
+              "category": "RESTAURANT",
+              "roadAddress": "서울시",
+              "jibunAddress": "서울시",
+              "location": {"lon": 126.7, "lat": 37.3},
+              "source": {
+                "sourceProvider": "KAKAO",
+                "providerPlaceId": "test123",
+                "sourceUrl": "https://place.map.kakao.com/123",
+                "inputMethod": "SEARCH_PICK"
+              }
             }
             """.trimIndent()
         }.andExpect { status { isCreated() } }

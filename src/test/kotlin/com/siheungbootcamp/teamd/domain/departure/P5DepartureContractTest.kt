@@ -376,7 +376,7 @@ class P5DepartureContractTest(
         val r = mockMvc.post("/api/v1/boards/${host.boardId}/places") {
             bearer(host.token)
             contentType = MediaType.APPLICATION_JSON
-            content = """{"name":"$n","addressName":"서울","roadAddressName":"서울","lon":$lon,"lat":$lat,"internalCategory":"RESTAURANT","provider":"KAKAO","providerPlaceId":"123","providerPlaceUrl":null,"source":"MANUAL_PIN"}"""
+            content = """{"name":"$n","category":"RESTAURANT","roadAddress":"서울","jibunAddress":"서울","location":{"lon":$lon,"lat":$lat},"source":{"sourceProvider":"MANUAL","providerPlaceId":null,"sourceUrl":null,"inputMethod":"MANUAL_PIN"}}"""
         }.andExpect { status { isCreated() } }.andReturn().response
         return objectMapper.readTree(r.contentAsString).path("placeId").asText()
     }
