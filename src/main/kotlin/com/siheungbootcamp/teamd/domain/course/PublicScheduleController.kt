@@ -5,6 +5,7 @@ import com.siheungbootcamp.teamd.global.ratelimit.RateLimitKey
 import io.swagger.v3.oas.annotations.Operation
 import io.swagger.v3.oas.annotations.responses.ApiResponse
 import io.swagger.v3.oas.annotations.tags.Tag
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
 import org.springframework.http.HttpHeaders
 import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.GetMapping
@@ -17,10 +18,13 @@ import org.springframework.web.bind.annotation.RestController
  *
  * `SecurityConfig`가 이 경로를 이미 permitAll로 열어 두었다. 토큰 존재 여부를 숨기기 위해
  * CLOSED 보드와 없는 토큰을 똑같이 404로 응답한다.
+ *
+ * P7에서는 canonical 이전이므로 기본 비활성화된다.
  */
 @RestController
 @RequestMapping("/api/v1/public/schedules")
 @Tag(name = "P4 코스·공개 일정", description = "코스 초안을 편집하고 확정한 뒤 공개 일정을 조회합니다.")
+@ConditionalOnProperty(prefix = "app", name = ["legacy-api-enabled"], havingValue = "true")
 class PublicScheduleController(private val service: CourseService) {
 
     @GetMapping("/{publicToken}")

@@ -120,12 +120,16 @@ class AreaService(
         val snapshot = mapper.readTree(job.snapshotJson)
         val participantCount = snapshot.path("participantIds").size()
         return CreateAreaSearchJobResponse(
-            jobId = job.publicId,
-            status = job.status,
-            estimatedExternalCalls = EstimatedExternalCalls(
-                odsay = participantCount,  // 참여자당 1회
-                kakaoLocal = AreaJobExecutor.MAX_KAKAO_CALLS,  // 상위 3개 조각 × 1개 키워드 = 최대 3회
-                tmapTransit = 0,            // TMAP 호출 안 함
+            job = AreaJobResponse(
+                jobId = job.publicId,
+                status = job.status,
+                durationMin = job.durationMin,
+                createdAt = job.createdAt,
+                estimatedExternalCalls = EstimatedExternalCalls(
+                    odsay = participantCount,
+                    kakaoLocal = AreaJobExecutor.MAX_KAKAO_CALLS,
+                    tmapTransit = 0,
+                ),
             ),
         )
     }
@@ -162,31 +166,53 @@ class AreaService(
             throw BusinessException(ErrorCode.FORBIDDEN)
         }
 
-        val result = if (job.status == "SUCCEEDED") {
-            val candidates = areaCandidateRepository.findByJobIdOrderByRankAsc(job.id ?: error("job must have id"))
-            AreaSearchResult(
-                candidates = candidates.map { candidate ->
-                    AreaCandidateResponse(
-                        candidateId = candidate.publicId,
-                        name = candidate.name,
-                        lon = candidate.lon,
-                        lat = candidate.lat,
-                        metrics = mapper.readTree(candidate.metricsJson),
-                        reasons = mapper.readTree(candidate.reasonsJson),
-                        rank = candidate.rank,
+        val result = if (job.status == "SUCCEEDED" && job.resultJson != null) {
+            try {
+                // Task 5: 새로운 형식으로 저장된 결과 파싱
+                val resultJson = mapper.readTree(job.resultJson!!)
+
+                // 새로운 형식 감지: participantCenter 또는 isochrones 필드의 존재로 판단
+                if (resultJson.has("participantCenter") || resultJson.has("isochrones")) {
+                    // Task 5 새로운 형식 - mapper를 사용한 직접 역직렬화
+                    try {
+                        mapper.treeToValue(resultJson, AreaSearchResult::class.java)
+                    } catch (e: Exception) {
+                        logger.warn("area_search_new_format_parse_error jobId=$jobId error=${e.message}")
+                        // 수동 파싱 fallback
+                        AreaSearchResult(
+                            participantCenter = null,
+                            isochrones = emptyList(),
+                            commonArea = null,
+                            anchors = emptyList(),
+                        )
+                    }
+                } else {
+                    // 레거시 형식 (이전 구현)
+                    AreaSearchResult(
+                        participantCenter = null,
+                        isochrones = emptyList(),
+                        commonArea = null,
+                        anchors = emptyList(),
                     )
-                },
-            )
+                }
+            } catch (e: Exception) {
+                logger.warn("area_search_result_parse_error jobId=$jobId error=${e.message}")
+                null
+            }
         } else {
             null
         }
 
         return GetAreaSearchJobResponse(
-            jobId = job.publicId,
-            status = job.status,
-            durationMin = job.durationMin,
+            job = AreaJobResponse(
+                jobId = job.publicId,
+                status = job.status,
+                durationMin = job.durationMin,
+                createdAt = job.createdAt,
+                resultSource = if (job.status == "SUCCEEDED") "COMPUTED" else null,
+                errorCode = job.errorCode,
+            ),
             result = result,
-            errorCode = job.errorCode,
         )
     }
 }

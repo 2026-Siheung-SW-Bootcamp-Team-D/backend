@@ -27,48 +27,66 @@ import java.net.URI
 @Tag(name = "P2 장소·검색", description = "장소를 검색하고 등록·조회·삭제합니다.")
 class PlaceController(private val service: PlaceService) {
 
-    // 검색 엔드포인트 (9-11)
+    // 검색 엔드포인트 (9-11, P7 canonical paths)
 
-    @GetMapping("/boards/{boardId}/place-candidates")
-    @Operation(summary = "장소 후보 검색", description = "Kakao Local 키워드 검색으로 최대 5개 후보를 반환합니다.")
+    @GetMapping("/boards/{boardId}/search/places")
+    @Operation(summary = "장소 검색", description = "Kakao Local 키워드 검색으로 최대 15개 결과를 반환합니다.")
     @SecurityRequirement(name = "participantToken")
     @ApiResponse(responseCode = "200", description = "검색 성공, 결과 없을 수 있음")
     @ApiResponse(responseCode = "400", description = "쿼리 길이·형식 오류")
     @ApiResponse(responseCode = "404", description = "다른 보드의 토큰(존재 숨김)")
     @RateLimit(permits = 20, windowSeconds = 60, key = RateLimitKey.PARTICIPANT, scope = RateLimitScope.PARTICIPANT_GLOBAL)
-    fun searchPlaceCandidates(
+    fun searchPlaces(
         @PathVariable boardId: String,
-        @RequestParam(required = true) query: String,
+        @RequestParam(required = true, name = "q") query: String,
+        @RequestParam(defaultValue = "KAKAO") provider: String,
         @RequestParam(required = false) lon: Double?,
         @RequestParam(required = false) lat: Double?,
         @RequestParam(required = false) radius: Int?,
         @Parameter(hidden = true) @CurrentParticipant principal: ParticipantPrincipal,
-    ) = service.searchKeyword(boardId, principal, query, lon, lat, radius)
+    ) = service.searchKeyword(boardId, principal, query, lon, lat, radius, provider)
 
-    @GetMapping("/boards/{boardId}/address-candidates")
-    @Operation(summary = "주소 후보 검색", description = "도로명 또는 지번 주소를 검색합니다.")
+    @GetMapping("/boards/{boardId}/search/addresses")
+    @Operation(summary = "주소 검색", description = "도로명 또는 지번 주소를 검색합니다.")
     @SecurityRequirement(name = "participantToken")
     @ApiResponse(responseCode = "200", description = "검색 성공, 결과 없을 수 있음")
     @ApiResponse(responseCode = "404", description = "다른 보드의 토큰(존재 숨김)")
     @RateLimit(permits = 20, windowSeconds = 60, key = RateLimitKey.PARTICIPANT, scope = RateLimitScope.PARTICIPANT_GLOBAL)
-    fun searchAddressCandidates(
+    fun searchAddresses(
         @PathVariable boardId: String,
-        @RequestParam(required = true) query: String,
+        @RequestParam(required = true, name = "q") query: String,
         @Parameter(hidden = true) @CurrentParticipant principal: ParticipantPrincipal,
     ) = service.searchAddress(boardId, principal, query)
 
-    @GetMapping("/boards/{boardId}/coordinate-address")
-    @Operation(summary = "좌표로 주소 조회", description = "경위도로부터 도로명·지번 주소를 조회합니다.")
+    @GetMapping("/boards/{boardId}/search/reverse-geocode")
+    @Operation(summary = "역지오코딩", description = "경위도로부터 도로명·지번 주소를 조회합니다.")
     @SecurityRequirement(name = "participantToken")
     @ApiResponse(responseCode = "200", description = "조회 성공, 주소 없을 수 있음")
     @ApiResponse(responseCode = "404", description = "다른 보드의 토큰(존재 숨김)")
     @RateLimit(permits = 20, windowSeconds = 60, key = RateLimitKey.PARTICIPANT, scope = RateLimitScope.PARTICIPANT_GLOBAL)
-    fun getCoordinateAddress(
+    fun reverseGeocode(
         @PathVariable boardId: String,
         @RequestParam(required = true) lon: Double,
         @RequestParam(required = true) lat: Double,
         @Parameter(hidden = true) @CurrentParticipant principal: ParticipantPrincipal,
     ) = service.coord2Address(boardId, principal, lon, lat)
+
+    @GetMapping("/boards/{boardId}/search/nearby-places")
+    @Operation(summary = "주변 장소 검색", description = "자유 좌표에서 주변 장소를 검색합니다. q 또는 category 중 정확히 하나를 전달해야 합니다.")
+    @SecurityRequirement(name = "participantToken")
+    @ApiResponse(responseCode = "200", description = "검색 성공, 결과 없을 수 있음")
+    @ApiResponse(responseCode = "400", description = "입력 검증 오류 (좌표 누락, 둘 다 누락/동시 전달 등)")
+    @ApiResponse(responseCode = "404", description = "다른 보드의 토큰(존재 숨김)")
+    @RateLimit(permits = 20, windowSeconds = 60, key = RateLimitKey.PARTICIPANT, scope = RateLimitScope.PARTICIPANT_GLOBAL)
+    fun searchNearbyPlaces(
+        @PathVariable boardId: String,
+        @RequestParam(required = false) lon: Double?,
+        @RequestParam(required = false) lat: Double?,
+        @RequestParam(required = false, name = "q") query: String?,
+        @RequestParam(required = false) category: String?,
+        @RequestParam(defaultValue = "1000") radius: Int,
+        @Parameter(hidden = true) @CurrentParticipant principal: ParticipantPrincipal,
+    ) = service.searchNearby(boardId, principal, lon, lat, query, category, radius)
 
     // 장소 관리 엔드포인트 (12-15)
 
@@ -134,10 +152,10 @@ class PlaceController(private val service: PlaceService) {
     ) = service.get(boardId, placeId, principal)
 
     @DeleteMapping("/boards/{boardId}/places/{placeId}")
-    @Operation(summary = "장소 삭제", description = "제안자 또는 호스트만 삭제할 수 있습니다. 이미 삭제된 장소를 재삭제해도 204를 반환합니다.")
+    @Operation(summary = "장소 보관", description = "같은 보드의 활성 참여자는 누구나 후보를 보관할 수 있습니다. 이미 보관된 장소도 204를 반환합니다.")
     @SecurityRequirement(name = "participantToken")
     @ApiResponse(responseCode = "204", description = "삭제 성공 또는 이미 삭제됨")
-    @ApiResponse(responseCode = "403", description = "제안자·호스트가 아님")
+    @ApiResponse(responseCode = "403", description = "활성 참여자가 아님")
     @ApiResponse(responseCode = "404", description = "장소 또는 다른 보드의 토큰(존재 숨김)")
     @ApiResponse(responseCode = "409", description = "투표·코스에서 사용 중")
     @RequiresBoardOpen
@@ -159,7 +177,9 @@ class PlaceController(private val service: PlaceService) {
     @ApiResponse(responseCode = "204", description = "좋아요 성공 또는 이미 좋아요함")
     @ApiResponse(responseCode = "403", description = "다른 보드의 토큰")
     @ApiResponse(responseCode = "404", description = "장소 또는 보드 없음")
+    @ApiResponse(responseCode = "409", description = "보드가 종료됨")
     @RateLimit(permits = 60, windowSeconds = 60, key = RateLimitKey.PARTICIPANT, scope = RateLimitScope.PARTICIPANT_GLOBAL)
+    @RequiresBoardOpen
     fun putLike(
         @PathVariable boardId: String,
         @PathVariable placeId: String,
@@ -175,7 +195,9 @@ class PlaceController(private val service: PlaceService) {
     @ApiResponse(responseCode = "204", description = "좋아요 취소 성공 또는 좋아요하지 않음")
     @ApiResponse(responseCode = "403", description = "다른 보드의 토큰")
     @ApiResponse(responseCode = "404", description = "보드 또는 장소 없음")
+    @ApiResponse(responseCode = "409", description = "보드가 종료됨")
     @RateLimit(permits = 60, windowSeconds = 60, key = RateLimitKey.PARTICIPANT, scope = RateLimitScope.PARTICIPANT_GLOBAL)
+    @RequiresBoardOpen
     fun deleteLike(
         @PathVariable boardId: String,
         @PathVariable placeId: String,

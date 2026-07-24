@@ -1,5 +1,6 @@
 package com.siheungbootcamp.teamd.domain.comment
 
+import com.siheungbootcamp.teamd.domain.board.RequiresBoardOpen
 import com.siheungbootcamp.teamd.global.auth.CurrentParticipant
 import com.siheungbootcamp.teamd.global.auth.ParticipantPrincipal
 import com.siheungbootcamp.teamd.global.ratelimit.RateLimit
@@ -7,6 +8,7 @@ import com.siheungbootcamp.teamd.global.ratelimit.RateLimitKey
 import com.siheungbootcamp.teamd.global.ratelimit.RateLimitScope
 import com.siheungbootcamp.teamd.global.web.PageResponse
 import io.swagger.v3.oas.annotations.Operation
+import io.swagger.v3.oas.annotations.responses.ApiResponse
 import io.swagger.v3.oas.annotations.tags.Tag
 import org.springframework.data.domain.PageRequest
 import org.springframework.data.domain.Pageable
@@ -22,7 +24,7 @@ import jakarta.validation.Valid
  * - GET /boards/{boardId}/places/{placeId}/comments (16): 페이지네이션
  * - POST /boards/{boardId}/places/{placeId}/comments (17): 생성, 참여자당 rate limit 20회/분
  * - PATCH /boards/{boardId}/places/{placeId}/comments/{commentId} (18): 수정, 작성자만
- * - DELETE /boards/{boardId}/places/{placeId}/comments/{commentId} (19): 삭제, 작성자 또는 호스트
+ * - DELETE /boards/{boardId}/places/{placeId}/comments/{commentId} (19): 삭제, 작성자만
  */
 @RestController
 @RequestMapping("/api/v1/boards/{boardId}/places/{placeId}/comments")
@@ -46,7 +48,9 @@ class CommentController(
 
     @PostMapping
     @Operation(summary = "댓글 작성", description = "장소에 댓글을 작성한다. 참여자당 20회/분 rate limit.")
+    @ApiResponse(responseCode = "409", description = "보드가 종료됨")
     @RateLimit(permits = 20, windowSeconds = 60, key = RateLimitKey.PARTICIPANT, scope = RateLimitScope.ENDPOINT)
+    @RequiresBoardOpen
     fun create(
         @PathVariable boardId: String,
         @PathVariable placeId: String,
@@ -59,6 +63,8 @@ class CommentController(
 
     @PatchMapping("/{commentId}")
     @Operation(summary = "댓글 수정", description = "작성자만 댓글을 수정할 수 있다.")
+    @ApiResponse(responseCode = "409", description = "보드가 종료됨")
+    @RequiresBoardOpen
     fun update(
         @PathVariable boardId: String,
         @PathVariable placeId: String,
@@ -71,7 +77,9 @@ class CommentController(
     }
 
     @DeleteMapping("/{commentId}")
-    @Operation(summary = "댓글 삭제", description = "작성자 또는 호스트가 댓글을 삭제할 수 있다.")
+    @Operation(summary = "댓글 삭제", description = "작성자만 댓글을 삭제할 수 있다.")
+    @ApiResponse(responseCode = "409", description = "보드가 종료됨")
+    @RequiresBoardOpen
     fun delete(
         @PathVariable boardId: String,
         @PathVariable placeId: String,

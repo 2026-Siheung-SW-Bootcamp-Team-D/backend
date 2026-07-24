@@ -42,6 +42,7 @@ import kotlin.test.assertFalse
     "app.crypto.origin-key=AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=",
     "app.board.frontend-base-url=https://example.app",
     "app.kakao.rest-key=test-kakao-key",
+    "app.legacy-api-enabled=true",
 ])
 class P3VoteContractTest(
     @Autowired private val mockMvc: MockMvc,
@@ -394,15 +395,16 @@ class P3VoteContractTest(
             content = """
             {
               "name": "$name",
-              "lon": $lon,
-              "lat": $lat,
-              "addressName": "서울시",
-              "roadAddressName": "서울시",
-              "internalCategory": "RESTAURANT",
-              "provider": null,
-              "providerPlaceId": null,
-              "providerPlaceUrl": null,
-              "source": "MANUAL_PIN"
+              "category": "RESTAURANT",
+              "roadAddress": "서울시",
+              "jibunAddress": "서울시",
+              "location": {"lon": $lon, "lat": $lat},
+              "source": {
+                "sourceProvider": "MANUAL",
+                "providerPlaceId": null,
+                "sourceUrl": null,
+                "inputMethod": "MANUAL_PIN"
+              }
             }
             """.trimIndent()
         }.andExpect { status { isCreated() } }.andReturn().response.contentAsString

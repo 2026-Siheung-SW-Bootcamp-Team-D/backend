@@ -28,6 +28,9 @@ class KakaoStubServer(port: Int = 0) : AutoCloseable {
         server.createContext("/v2/local/search/address.json") { exchange ->
             handleAddressSearch(exchange)
         }
+        server.createContext("/v2/local/search/category.json") { exchange ->
+            handleCategorySearch(exchange)
+        }
         server.createContext("/v2/local/geo/coord2address.json") { exchange ->
             handleCoord2Address(exchange)
         }
@@ -52,10 +55,16 @@ class KakaoStubServer(port: Int = 0) : AutoCloseable {
         this.addressMode = mode
     }
 
+    fun setCategoryResponseMode(mode: ResponseMode) {
+        requestCounts["category"] = AtomicInteger(0)
+        this.categoryMode = mode
+    }
+
     fun requestCount(endpoint: String): Int = requestCounts[endpoint]?.get() ?: 0
 
     private var keywordMode: ResponseMode = ResponseMode.SUCCESS
     private var addressMode: ResponseMode = ResponseMode.SUCCESS
+    private var categoryMode: ResponseMode = ResponseMode.SUCCESS
 
     private fun handleKeywordSearch(exchange: HttpExchange) {
         val count = requestCounts.getOrPut("keyword") { AtomicInteger(0) }
@@ -127,6 +136,38 @@ class KakaoStubServer(port: Int = 0) : AutoCloseable {
                 }
                 """.trimIndent()
                 sendResponse(exchange, 200, response)
+            }
+            else -> sendResponse(exchange, 200, """{"documents":[]}""")
+        }
+    }
+
+    private fun handleCategorySearch(exchange: HttpExchange) {
+        val count = requestCounts.getOrPut("category") { AtomicInteger(0) }
+        count.incrementAndGet()
+
+        when (categoryMode) {
+            ResponseMode.SUCCESS -> {
+                val response = """
+                {
+                  "documents": [
+                    {
+                      "id": "12345",
+                      "place_name": "테스트 카페",
+                      "category_name": "카페",
+                      "address_name": "서울 강남구 테스트동",
+                      "road_address_name": "서울 강남구 테스트로 123",
+                      "x": 127.05,
+                      "y": 37.4,
+                      "place_url": "https://place.map.kakao.com/12345",
+                      "distance": 500
+                    }
+                  ]
+                }
+                """.trimIndent()
+                sendResponse(exchange, 200, response)
+            }
+            ResponseMode.EMPTY -> {
+                sendResponse(exchange, 200, """{"documents":[]}""")
             }
             else -> sendResponse(exchange, 200, """{"documents":[]}""")
         }

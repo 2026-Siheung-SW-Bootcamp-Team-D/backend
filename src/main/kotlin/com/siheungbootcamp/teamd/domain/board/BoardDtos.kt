@@ -15,9 +15,7 @@ data class CreateBoardRequest(
 )
 data class PatchBoardRequest(
     @field:Size(min = 2, max = 40) val name: String? = null,
-    @field:Valid val dateRange: DateRangeRequest? = null,
     @field:Size(max = 100) val purpose: String? = null,
-    val status: BoardStatus? = null,
 )
 data class JoinRequest(@field:Size(min = 1, max = 20) val nickname: String)
 data class OriginRequest(

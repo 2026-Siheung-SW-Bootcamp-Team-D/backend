@@ -47,10 +47,10 @@ class BoardController(private val service: BoardService, private val properties:
     fun get(@PathVariable boardId: String, @Parameter(hidden = true) @CurrentParticipant principal: ParticipantPrincipal) = service.get(boardId, principal)
 
     @PatchMapping("/boards/{boardId}")
-    @Operation(summary = "보드 수정·종료", description = "HOST가 정보 일부를 수정하거나 상태를 CLOSED로 변경합니다.")
+    @Operation(summary = "보드 수정", description = "같은 보드의 모든 활성 참여자가 이름과 목적을 수정할 수 있습니다.")
     @SecurityRequirement(name = "participantToken")
     @ApiResponse(responseCode = "200", description = "수정 성공")
-    @ApiResponse(responseCode = "403", description = "HOST가 아님")
+    @ApiResponse(responseCode = "403", description = "활성 참여자가 아님")
     @ApiResponse(responseCode = "409", description = "이미 종료된 보드")
     @RateLimit(permits = 60, windowSeconds = 60, key = RateLimitKey.PARTICIPANT, scope = RateLimitScope.PARTICIPANT_GLOBAL)
     fun patch(@PathVariable boardId: String, @Parameter(hidden = true) @CurrentParticipant principal: ParticipantPrincipal, @Valid @RequestBody request: PatchBoardRequest) = service.patch(boardId, principal, request)
@@ -67,6 +67,8 @@ class BoardController(private val service: BoardService, private val properties:
     @ApiResponse(responseCode = "200", description = "선택 성공")
     @ApiResponse(responseCode = "403", description = "다른 보드의 토큰")
     @ApiResponse(responseCode = "404", description = "보드 또는 장소 없음(또는 ACTIVE 상태가 아님)")
+    @ApiResponse(responseCode = "409", description = "보드가 종료됨")
+    @RequiresBoardOpen
     @RateLimit(permits = 60, windowSeconds = 60, key = RateLimitKey.PARTICIPANT, scope = RateLimitScope.PARTICIPANT_GLOBAL)
     fun putSelectedPlace(
         @PathVariable boardId: String,
@@ -80,6 +82,8 @@ class BoardController(private val service: BoardService, private val properties:
     @ApiResponse(responseCode = "204", description = "선택 해제 성공 또는 선택된 장소 없음")
     @ApiResponse(responseCode = "403", description = "다른 보드의 토큰")
     @ApiResponse(responseCode = "404", description = "보드 없음")
+    @ApiResponse(responseCode = "409", description = "보드가 종료됨")
+    @RequiresBoardOpen
     @RateLimit(permits = 60, windowSeconds = 60, key = RateLimitKey.PARTICIPANT, scope = RateLimitScope.PARTICIPANT_GLOBAL)
     fun deleteSelectedPlace(
         @PathVariable boardId: String,

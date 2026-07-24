@@ -21,7 +21,7 @@ import java.time.Instant
 @Component
 class AreaJobStateWriter(
     private val jobRepository: AreaSearchJobRepository,
-    private val candidateRepository: AreaCandidateRepository,
+    private val candidateRepository: AreaSuggestionRepository,
     private val mapper: ObjectMapper,
 ) {
     private val logger = LoggerFactory.getLogger(javaClass)
@@ -56,7 +56,7 @@ class AreaJobStateWriter(
      * 작업을 성공 상태로 표시하고 후보들을 저장한다.
      */
     @Transactional
-    fun markSucceeded(job: AreaSearchJob, candidates: List<AreaCandidate>) {
+    fun markSucceeded(job: AreaSearchJob, candidates: List<AreaSuggestion>) {
         // 후보 저장
         candidates.forEach { candidateRepository.save(it) }
 
@@ -77,6 +77,91 @@ class AreaJobStateWriter(
                 )
             }
             set("candidates", candidatesArray)
+        }
+
+        job.markSucceeded(result)
+        jobRepository.save(job)
+    }
+
+    /**
+     * Task 5: 새로운 구조로 작업을 성공 상태로 표시한다.
+     * 참여자 중심점, 익명 isochrone, nullable 공통 영역, 기준점 리스트를 저장한다.
+     * 기준점(anchor)은 area_suggestion 테이블에 행으로 저장한다.
+     */
+    @Transactional
+    fun markSucceededWithNewFormat(job: AreaSearchJob, computation: AreaComputationResult) {
+        // 기준점을 AreaSuggestion 엔티티로 변환 및 저장
+        // job.id는 claimNextJob()에서 save되었으므로 DB PK를 가짐
+        logger.debug("area_suggestion_save_start jobId=${job.publicId} dbId=${job.id} anchorCount=${computation.anchors.size}")
+
+        val persistedAnchors = computation.anchors.mapIndexed { index, anchor ->
+            val jobId = job.id ?: throw IllegalStateException("job.id is null but claimNextJob() should have persisted it. jobPublicId=${job.publicId}")
+            val uniqueAnchorId = "${job.publicId}_anchor_${index + 1}"
+            val suggestion = AreaSuggestion(
+                publicId = uniqueAnchorId,
+                jobId = jobId,
+                name = anchor.name,
+                lon = anchor.location.lon,
+                lat = anchor.location.lat,
+                providerPlaceId = anchor.providerPlaceId,
+                metricsJson = "{}",
+                reasonsJson = "{}",
+                rank = anchor.rank,
+                provider = anchor.provider,
+                centerDistanceMeters = anchor.centerDistanceMeters,
+            )
+            candidateRepository.save(suggestion)
+            anchor.copy(anchorId = uniqueAnchorId)
+        }
+        logger.debug("area_suggestion_save_complete jobId=${job.publicId} count=${computation.anchors.size}")
+
+        // 결과 JSON 구성 (새로운 P7 형식)
+        val result = (mapper.createObjectNode() as ObjectNode).apply {
+
+            // 참여자 중심점
+            if (computation.participantCenter != null) {
+                set("participantCenter", mapper.valueToTree(computation.participantCenter))
+            } else {
+                putNull("participantCenter")
+            }
+
+            // 익명 isochrone - geometry는 이미 JsonNode 형식이므로 그대로 사용
+            val isochronesArray = mapper.createArrayNode()
+            computation.isochrones.forEach { isochrone ->
+                isochronesArray.add(
+                    (mapper.createObjectNode() as ObjectNode).apply {
+                        put("areaId", isochrone.areaId)
+                        set("geometry", isochrone.geometry)
+                    }
+                )
+            }
+            set("isochrones", isochronesArray)
+
+            // 공통 영역 (nullable) - commonArea도 이미 JsonNode 형식이므로 그대로 사용
+            if (computation.commonArea != null) {
+                set("commonArea", computation.commonArea)
+            } else {
+                putNull("commonArea")
+            }
+
+            // 기준점 리스트
+            val anchorsArray = mapper.createArrayNode()
+            persistedAnchors.forEach { anchor ->
+                anchorsArray.add(
+                    (mapper.createObjectNode() as ObjectNode).apply {
+                        put("anchorId", anchor.anchorId)
+                        put("provider", anchor.provider)
+                        if (anchor.providerPlaceId != null) put("providerPlaceId", anchor.providerPlaceId) else putNull("providerPlaceId")
+                        put("category", anchor.category)
+                        put("name", anchor.name)
+                        if (anchor.roadAddress != null) put("roadAddress", anchor.roadAddress) else putNull("roadAddress")
+                        set("location", mapper.valueToTree(anchor.location))
+                        put("centerDistanceMeters", anchor.centerDistanceMeters)
+                        put("rank", anchor.rank)
+                    }
+                )
+            }
+            set("anchors", anchorsArray)
         }
 
         job.markSucceeded(result)

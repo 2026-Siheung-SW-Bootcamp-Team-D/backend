@@ -38,6 +38,7 @@ import kotlin.test.assertTrue
     "app.crypto.origin-key=AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=",
     "app.board.frontend-base-url=https://example.app",
     "app.kakao.rest-key=test-kakao-key",
+    "app.legacy-api-enabled=true",
 ])
 class P4CourseContractTest(
     @Autowired private val mockMvc: MockMvc,
@@ -400,11 +401,9 @@ class P4CourseContractTest(
         val confirmJson = objectMapper.readTree(confirmCourse(host, 1))
         val publicToken = confirmJson.path("publicUrl").asText().substringAfterLast("/")
 
-        mockMvc.patch("/api/v1/boards/${host.boardId}") {
-            bearer(host.token)
-            contentType = MediaType.APPLICATION_JSON
-            content = """{"status":"CLOSED"}"""
-        }.andExpect { status { isOk() } }
+        jdbcClient.sql("update board set status='CLOSED', updated_at=now() where public_id=:boardId")
+            .param("boardId", host.boardId)
+            .update()
 
         mockMvc.get("/api/v1/public/schedules/$publicToken") {}
             .andExpect {
@@ -494,15 +493,16 @@ class P4CourseContractTest(
             content = """
             {
               "name": "$name",
-              "lon": $lon,
-              "lat": $lat,
-              "addressName": "서울시",
-              "roadAddressName": "서울시 어딘가",
-              "internalCategory": "RESTAURANT",
-              "provider": null,
-              "providerPlaceId": null,
-              "providerPlaceUrl": null,
-              "source": "MANUAL_PIN"
+              "category": "RESTAURANT",
+              "roadAddress": "서울시 어딘가",
+              "jibunAddress": "서울시",
+              "location": {"lon": $lon, "lat": $lat},
+              "source": {
+                "sourceProvider": "MANUAL",
+                "providerPlaceId": null,
+                "sourceUrl": null,
+                "inputMethod": "MANUAL_PIN"
+              }
             }
             """.trimIndent()
         }.andExpect { status { isCreated() } }.andReturn().response.contentAsString

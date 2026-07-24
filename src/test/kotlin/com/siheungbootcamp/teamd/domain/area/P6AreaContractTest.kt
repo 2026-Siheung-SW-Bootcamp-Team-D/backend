@@ -120,10 +120,10 @@ class P6AreaContractTest(
 
         assertEquals(202, postRes.status, "POST는 202 ACCEPTED를 반환")
         val postData = objectMapper.readTree(postRes.contentAsString)
-        assertEquals("QUEUED", postData.path("status").asText())
-        assertEquals(2, postData.path("estimatedExternalCalls").path("odsay").asInt())
-        assertEquals(0, postData.path("estimatedExternalCalls").path("tmapTransit").asInt())
-        val jobId = postData.path("jobId").asText()
+        assertEquals("QUEUED", postData.path("job").path("status").asText())
+        assertEquals(2, postData.path("job").path("estimatedExternalCalls").path("odsay").asInt())
+        assertEquals(0, postData.path("job").path("estimatedExternalCalls").path("tmapTransit").asInt())
+        val jobId = postData.path("job").path("jobId").asText()
 
         // 모든 작업 처리
         for (i in 0 until 100) { if (!areaJobExecutor.processOne()) break }
@@ -132,10 +132,30 @@ class P6AreaContractTest(
             bearer(member.token)
         }.andReturn().response
         val getData = objectMapper.readTree(getRes.contentAsString)
-        assertEquals("SUCCEEDED", getData.path("status").asText())
-        val candidates = getData.path("result").path("candidates")
-        assertEquals(true, candidates.isArray)
-        assertEquals(true, candidates.size() <= 3)
+        assertEquals("SUCCEEDED", getData.path("job").path("status").asText())
+        // Task 5: 새로운 응답 구조 (participantCenter, isochrones, commonArea nullable, anchors)
+        val result = getData.path("result")
+        assertEquals(true, result.has("participantCenter"))
+        assertEquals(true, result.has("isochrones"))
+        assertEquals(true, result.has("anchors"))
+        assertEquals(true, result.path("anchors").size() <= 3)
+        assertEquals(126.965, result.path("participantCenter").path("lon").asDouble(), 0.000_001)
+        assertEquals(37.545, result.path("participantCenter").path("lat").asDouble(), 0.000_001)
+        val anchors = result.path("anchors")
+        for (index in 0 until anchors.size()) {
+            assertEquals(index + 1, anchors[index].path("rank").asInt())
+            assertEquals("KAKAO", anchors[index].path("provider").asText())
+            assertEquals(true, anchors[index].has("providerPlaceId"))
+            assertEquals(true, anchors[index].has("location"))
+            if (index > 0) {
+                assertEquals(
+                    true,
+                    anchors[index - 1].path("centerDistanceMeters").asInt() <=
+                        anchors[index].path("centerDistanceMeters").asInt(),
+                    "기준점은 참여자 대표 중심과 가까운 순이어야 함",
+                )
+            }
+        }
 
         // TMAP 호출 0회 확인
         assertEquals(0, kakaoStubServer.tmapRequestCount)
@@ -186,14 +206,14 @@ class P6AreaContractTest(
             contentType = MediaType.APPLICATION_JSON
             content = """{"durationMin":45}"""
         }.andReturn().response
-        val firstJobId = objectMapper.readTree(firstRes.contentAsString).path("jobId").asText()
+        val firstJobId = objectMapper.readTree(firstRes.contentAsString).path("job").path("jobId").asText()
 
         val secondRes = mockMvc.post("/api/v1/boards/${host.boardId}/area-search-jobs") {
             bearer(member.token)
             contentType = MediaType.APPLICATION_JSON
             content = """{"durationMin":45}"""
         }.andReturn().response
-        val secondJobId = objectMapper.readTree(secondRes.contentAsString).path("jobId").asText()
+        val secondJobId = objectMapper.readTree(secondRes.contentAsString).path("job").path("jobId").asText()
 
         assertEquals(firstJobId, secondJobId, "같은 입력의 활성 작업은 기존 jobId 반환")
     }
@@ -212,7 +232,7 @@ class P6AreaContractTest(
             contentType = MediaType.APPLICATION_JSON
             content = """{"durationMin":45}"""
         }.andReturn().response
-        val jobId = objectMapper.readTree(postRes.contentAsString).path("jobId").asText()
+        val jobId = objectMapper.readTree(postRes.contentAsString).path("job").path("jobId").asText()
 
         for (i in 0 until 100) { if (!areaJobExecutor.processOne()) break }
 
@@ -220,8 +240,9 @@ class P6AreaContractTest(
             bearer(member.token)
         }.andReturn().response
         val getData = objectMapper.readTree(getRes.contentAsString)
-        assertEquals("FAILED", getData.path("status").asText())
-        assertEquals("NO_INTERSECTION", getData.path("errorCode").asText())
+        // Task 5: 교집합 없음은 실패가 아니라 성공 (commonArea=null)
+        assertEquals("SUCCEEDED", getData.path("job").path("status").asText())
+        assertEquals(true, getData.path("result").path("commonArea").isNull)
     }
 
     @Test
@@ -239,7 +260,7 @@ class P6AreaContractTest(
             contentType = MediaType.APPLICATION_JSON
             content = """{"durationMin":45}"""
         }.andReturn().response
-        val jobId = objectMapper.readTree(postRes.contentAsString).path("jobId").asText()
+        val jobId = objectMapper.readTree(postRes.contentAsString).path("job").path("jobId").asText()
 
         for (i in 0 until 100) { if (!areaJobExecutor.processOne()) break }
 
@@ -247,8 +268,11 @@ class P6AreaContractTest(
             bearer(member.token)
         }.andReturn().response
         val getData = objectMapper.readTree(getRes.contentAsString)
-        assertEquals("FAILED", getData.path("status").asText())
-        assertEquals("NO_AREA_ANCHOR", getData.path("errorCode").asText())
+        // Task 5: 기준점 없음은 실패가 아니라 성공 (anchors=[])
+        assertEquals("SUCCEEDED", getData.path("job").path("status").asText())
+        val anchors = getData.path("result").path("anchors")
+        assertEquals(true, anchors.isArray)
+        assertEquals(0, anchors.size())
     }
 
     @Test
@@ -265,7 +289,7 @@ class P6AreaContractTest(
             contentType = MediaType.APPLICATION_JSON
             content = """{"durationMin":45}"""
         }.andReturn().response
-        val jobId = objectMapper.readTree(postRes.contentAsString).path("jobId").asText()
+        val jobId = objectMapper.readTree(postRes.contentAsString).path("job").path("jobId").asText()
 
         for (i in 0 until 100) { if (!areaJobExecutor.processOne()) break }
 
@@ -273,8 +297,8 @@ class P6AreaContractTest(
             bearer(member.token)
         }.andReturn().response
         val getData = objectMapper.readTree(getRes.contentAsString)
-        assertEquals("FAILED", getData.path("status").asText())
-        assertEquals("EXTERNAL_UNAVAILABLE", getData.path("errorCode").asText())
+        assertEquals("FAILED", getData.path("job").path("status").asText())
+        assertEquals("EXTERNAL_UNAVAILABLE", getData.path("job").path("errorCode").asText())
     }
 
     @Test
@@ -296,5 +320,44 @@ class P6AreaContractTest(
         for (i in 0 until 100) { if (!areaJobExecutor.processOne()) break }
 
         assertEquals(0, kakaoStubServer.tmapRequestCount, "TMAP 호출이 0이어야 함")
+    }
+
+    @Test
+    fun `작업 성공 후 area_suggestion 테이블에 기준점 행이 저장된다`() {
+        val host = createBoard("기준점 저장 테스트", "호스트")
+        val member = inviteAndJoin(host, "참여자")
+        setOrigin(host, "호스트출발", 126.97, 37.55)
+        setOrigin(member, "참여자출발", 126.96, 37.54)
+
+        kakaoStubServer.setKeywordResponseMode(KakaoStubServer.ResponseMode.SUCCESS)
+        odsayStubServer.responseMode = OdsayStubServer.ResponseMode.SUCCESS
+
+        val postRes = mockMvc.post("/api/v1/boards/${host.boardId}/area-search-jobs") {
+            bearer(member.token)
+            contentType = MediaType.APPLICATION_JSON
+            content = """{"durationMin":45}"""
+        }.andReturn().response
+
+        val postData = objectMapper.readTree(postRes.contentAsString)
+        val jobId = postData.path("job").path("jobId").asText()
+
+        // 모든 작업 처리
+        for (i in 0 until 100) { if (!areaJobExecutor.processOne()) break }
+
+        val getRes = mockMvc.get("/api/v1/boards/${host.boardId}/area-search-jobs/$jobId") {
+            bearer(member.token)
+        }.andReturn().response
+        val getData = objectMapper.readTree(getRes.contentAsString)
+        assertEquals("SUCCEEDED", getData.path("job").path("status").asText())
+
+        // area_suggestion 테이블에서 this job의 anchors 개수 확인
+        val anchorsArray = getData.path("result").path("anchors")
+        val anchorCount = anchorsArray.size()
+
+        val dbCount = jdbcClient.sql(
+            "select count(*) as cnt from area_suggestion where job_id = (select id from area_search_job where public_id = :jobId)"
+        ).param("jobId", jobId).query(Int::class.java).single()
+
+        assertEquals(anchorCount, dbCount, "area_suggestion 테이블에 저장된 행 개수가 anchors 개수와 일치해야 함")
     }
 }

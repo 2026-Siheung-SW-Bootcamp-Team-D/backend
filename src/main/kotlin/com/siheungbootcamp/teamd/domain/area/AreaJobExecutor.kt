@@ -40,7 +40,7 @@ import java.util.*
 @Component
 class AreaJobExecutor(
     private val jobRepository: AreaSearchJobRepository,
-    private val candidateRepository: AreaCandidateRepository,
+    private val candidateRepository: AreaSuggestionRepository,
     private val participantRepository: ParticipantRepository,
     private val geometryService: GeometryService,
     private val odsayClient: OdsayIsochroneClient,
@@ -98,21 +98,14 @@ class AreaJobExecutor(
             return
         }
 
-        // Phase 2: INTERSECTION
-        val intersectionPieces = executeIntersectionPhase(job, isochroneGeometries)
-        if (intersectionPieces.isEmpty()) {
-            stateWriter.markFailed(job, ErrorCode.NO_INTERSECTION.name)
-            return
-        }
+        // Phase 2: INTERSECTION (nullable - empty/null is allowed)
+        val intersection = executeIntersectionPhase(job, isochroneGeometries)
 
-        // Phase 3: AREA_ANCHOR_COLLECTION
-        val candidates = executeAnchorPhase(job, intersectionPieces)
-        if (candidates.isEmpty()) {
-            stateWriter.markFailed(job, ErrorCode.NO_AREA_ANCHOR.name)
-            return
-        }
+        // Phase 3: AREA_ANCHOR_COLLECTION with participant center
+        val computationResult = executeAnchorPhaseWithCenter(job, isochroneGeometries, intersection)
 
-        stateWriter.markSucceeded(job, candidates)
+        // Save success even if intersection is null or anchors are empty
+        stateWriter.markSucceededWithNewFormat(job, computationResult)
     }
 
     /**
@@ -169,13 +162,28 @@ class AreaJobExecutor(
     }
 
     /**
-     * Phase 2: INTERSECTION - JTS로 교집합 계산 후 상위 3개 조각
+     * Phase 2: INTERSECTION - JTS로 교집합 계산 (참고값, nullable)
+     *
+     * Task 5에서는 교집합이 없어도 성공으로 처리한다.
+     * 교집합 결과는 참고 정보일 뿐이며, 기준점 검색은 참여자 중심점을 기준으로 한다.
      */
-    private fun executeIntersectionPhase(job: AreaSearchJob, geometries: List<Geometry>): List<Geometry> {
-        val pieces = geometryService.intersectLargest(geometries, limit = 3)
-        logger.info("area_intersection_success jobId=${job.publicId} pieceCount=${pieces.size}")
-        stateWriter.updateProgress(job, "INTERSECTION", "found ${pieces.size} pieces")
-        return pieces
+    private fun executeIntersectionPhase(job: AreaSearchJob, geometries: List<Geometry>): Geometry? {
+        if (geometries.isEmpty()) return null
+        if (geometries.size == 1) return geometries[0]
+
+        // 모든 도형의 교집합 계산
+        val normalized = geometries.map { it.buffer(0.0) }
+        val intersection = normalized.reduce { acc, geom -> acc.intersection(geom) }
+
+        if (intersection.isEmpty) {
+            logger.info("area_intersection_empty jobId=${job.publicId}")
+            stateWriter.updateProgress(job, "INTERSECTION", "no common area")
+            return null
+        }
+
+        logger.info("area_intersection_success jobId=${job.publicId}")
+        stateWriter.updateProgress(job, "INTERSECTION", "found common area")
+        return intersection
     }
 
     /**
@@ -186,9 +194,9 @@ class AreaJobExecutor(
      *
      * Kakao Local 호출 횟수: 각 조각(최대 3개)당 1개 키워드만 검색 → 최대 3회 (MAX_KAKAO_CALLS 상수와 일치)
      */
-    private fun executeAnchorPhase(job: AreaSearchJob, pieces: List<Geometry>): List<AreaCandidate> {
+    private fun executeAnchorPhase(job: AreaSearchJob, pieces: List<Geometry>): List<AreaSuggestion> {
         val jobId = job.id ?: error("job must have id")
-        val candidates = mutableListOf<AreaCandidate>()
+        val candidates = mutableListOf<AreaSuggestion>()
         val seenPlaceIds = mutableSetOf<String>()
         val maxCandidates = 3
 
@@ -219,7 +227,7 @@ class AreaJobExecutor(
                     }
                     val reasons = mapper.createArrayNode().add("공통 도달 영역 안의 탐색 기준점")
 
-                    val candidate = AreaCandidate(
+                    val candidate = AreaSuggestion(
                         publicId = "candidate_${UUID.randomUUID()}",
                         jobId = jobId,
                         name = result.name,
@@ -240,7 +248,7 @@ class AreaJobExecutor(
 
         // 결정적인 정렬: 기준점 면적(큰순), 그다음 이름 사전순, providerPlaceId로 완전한 결정성 보장
         val sortedCandidates = candidates
-            .sortedWith(compareBy<AreaCandidate> { candidate ->
+            .sortedWith(compareBy<AreaSuggestion> { candidate ->
                 val metrics = mapper.readTree(candidate.metricsJson)
                 -metrics.path("intersectionAreaKm2").asDouble() // 음수로 내림차순
             }.thenBy { it.name }
@@ -248,7 +256,7 @@ class AreaJobExecutor(
             .take(maxCandidates) // 최대 3개만 유지
             .mapIndexed { index, candidate ->
                 // rank를 1부터 시작하도록 새로운 객체로 생성
-                AreaCandidate(
+                AreaSuggestion(
                     publicId = candidate.publicId,
                     jobId = candidate.jobId,
                     name = candidate.name,
@@ -264,5 +272,209 @@ class AreaJobExecutor(
         logger.info("area_anchor_success jobId=${job.publicId} candidateCount=${sortedCandidates.size}")
         stateWriter.updateProgress(job, "AREA_ANCHOR_COLLECTION", "found ${sortedCandidates.size} candidates")
         return sortedCandidates
+    }
+
+    /**
+     * Phase 3 (New): AREA_ANCHOR_COLLECTION with participant center
+     *
+     * 참여자들의 출발지 중심점을 계산하고, 그 주변에서 교통 기준점을 검색한다.
+     *
+     * 흐름:
+     * 1. 참여자 출발지 복호화 및 중심점 계산 (산술 평균)
+     * 2. 중심점 반경 20km 내에서 3개 키워드 검색 (지하철역, 기차역, 시외버스터미널)
+     * 3. 중심점까지의 거리 순서로 정렬 (최대 3개)
+     * 4. 공통 영역은 참고값이며 필터링에 사용하지 않음
+     */
+    private fun executeAnchorPhaseWithCenter(
+        job: AreaSearchJob,
+        isochroneGeometries: List<Geometry>,
+        commonArea: Geometry?,
+    ): AreaComputationResult {
+        val jobId = job.id ?: error("job must have id")
+        val snapshot = mapper.readTree(job.snapshotJson)
+        val participantIds = mutableListOf<Long>()
+        for (node in snapshot.path("participantIds")) {
+            participantIds.add(node.asLong())
+        }
+
+        // 1. 출발지 복호화 및 중심점 계산
+        val origins = mutableListOf<Pair<Double, Double>>()
+        for (pId in participantIds) {
+            val participant = participantRepository.findById(pId).orElse(null) ?: continue
+            val originCiphertext = participant.originCiphertext ?: continue
+            try {
+                val decrypted = originCipher.decrypt(originCiphertext)
+                val buffer = java.nio.ByteBuffer.wrap(decrypted)
+                val lon = buffer.double
+                val lat = buffer.double
+                origins.add(Pair(lon, lat))
+            } catch (e: Exception) {
+                logger.warn("area_anchor_decrypt_error jobId=${jobId} participantId=$pId")
+            }
+        }
+
+        if (origins.isEmpty()) {
+            logger.warn("area_anchor_no_origins jobId=${jobId}")
+            return AreaComputationResult(
+                isochrones = buildAnonymousIsochrones(isochroneGeometries),
+                commonArea = commonArea?.let { geometryToGeoJson(it) },
+                participantCenter = null,
+                anchors = emptyList()
+            )
+        }
+
+        val centerLon = origins.map { it.first }.average()
+        val centerLat = origins.map { it.second }.average()
+        val center = ParticipantCenterDto(centerLon, centerLat)
+
+        // 2. 교통 기준점 검색 (3개 키워드, 반경 20km)
+        val anchorQueries = listOf("지하철역", "기차역", "시외버스터미널")
+        val anchors = mutableListOf<AreaAnchorDto>()
+        val seenPlaceIds = mutableSetOf<String>()
+
+        for (query in anchorQueries) {
+            val anchorCategory = when (query) {
+                "지하철역" -> "SUBWAY_STATION"
+                "기차역" -> "TRAIN_STATION"
+                else -> "BUS_TERMINAL"
+            }
+            try {
+                val results = kakaoClient.searchKeyword(query, centerLon, centerLat, radius = 20_000, size = 15)
+                for (result in results) {
+                    if (seenPlaceIds.contains(result.providerPlaceId)) continue
+                    seenPlaceIds.add(result.providerPlaceId)
+
+                    val distanceMeters = GeometryService.haversineDistanceMeters(centerLon, centerLat, result.lon, result.lat)
+                    anchors.add(
+                        AreaAnchorDto(
+                            anchorId = "anchor_${result.providerPlaceId}",
+                            provider = "KAKAO",
+                            providerPlaceId = result.providerPlaceId,
+                            category = anchorCategory,
+                            name = result.name,
+                            roadAddress = result.roadAddressName.ifBlank { null },
+                            location = ParticipantCenterDto(result.lon, result.lat),
+                            centerDistanceMeters = distanceMeters,
+                            rank = 0,
+                        )
+                    )
+                }
+            } catch (e: Exception) {
+                logger.warn("area_anchor_search_error jobId=${jobId} query=$query error=${e.message}")
+            }
+        }
+
+        // 3. 거리 순으로 정렬하고 최대 3개 유지
+        val sortedAnchors = anchors
+            .sortedWith(compareBy<AreaAnchorDto> { it.centerDistanceMeters }
+                .thenBy { it.name }
+                .thenBy { it.anchorId })
+            .take(3)
+            .mapIndexed { index, anchor -> anchor.copy(rank = index + 1) }
+
+        stateWriter.updateProgress(job, "AREA_ANCHOR_COLLECTION", "found ${sortedAnchors.size} anchors")
+
+        return AreaComputationResult(
+            isochrones = buildAnonymousIsochrones(isochroneGeometries),
+            commonArea = commonArea?.let { geometryToGeoJson(it) },
+            participantCenter = center,
+            anchors = sortedAnchors,
+        )
+    }
+
+    private fun buildAnonymousIsochrones(geometries: List<Geometry>): List<AnonymousIsochroneDto> {
+        return geometries.mapIndexed { index, geometry ->
+            AnonymousIsochroneDto(
+                areaId = "area_${index + 1}",
+                geometry = geometryToGeoJson(geometry),
+            )
+        }
+    }
+
+    private fun geometryToGeoJson(geometry: Geometry): JsonNode {
+        val geom = (mapper.createObjectNode() as ObjectNode).apply {
+            put("type", geometry.geometryType)
+
+            when (geometry.geometryType) {
+                "Polygon" -> {
+                    val polygon = geometry as org.locationtech.jts.geom.Polygon
+                    val coordinates = mapper.createArrayNode()
+
+                    // Get all rings (exterior + holes)
+                    val allRings = mutableListOf<Array<org.locationtech.jts.geom.Coordinate>>()
+                    allRings.add(polygon.exteriorRing.coordinates)
+
+                    // Iterate through interior rings until getInteriorRingN throws exception
+                    var ringIndex = 0
+                    while (true) {
+                        try {
+                            allRings.add(polygon.getInteriorRingN(ringIndex).coordinates)
+                            ringIndex++
+                        } catch (e: Exception) {
+                            break
+                        }
+                    }
+
+                    // Convert all rings to JSON
+                    for (ring in allRings) {
+                        val ringCoords = mapper.createArrayNode()
+                        for (coord in ring) {
+                            ringCoords.add(mapper.createArrayNode().apply {
+                                add(coord.x)
+                                add(coord.y)
+                            })
+                        }
+                        coordinates.add(ringCoords)
+                    }
+
+                    set("coordinates", coordinates)
+                }
+                "MultiPolygon" -> {
+                    val multiPolygon = geometry as org.locationtech.jts.geom.MultiPolygon
+                    val coordinates = mapper.createArrayNode()
+
+                    for (i in 0 until multiPolygon.numGeometries) {
+                        val polygon = multiPolygon.getGeometryN(i) as org.locationtech.jts.geom.Polygon
+                        val polyCoords = mapper.createArrayNode()
+
+                        // Get all rings (exterior + holes)
+                        val allRings = mutableListOf<Array<org.locationtech.jts.geom.Coordinate>>()
+                        allRings.add(polygon.exteriorRing.coordinates)
+
+                        // Iterate through interior rings until getInteriorRingN throws exception
+                        var ringIndex = 0
+                        while (true) {
+                            try {
+                                allRings.add(polygon.getInteriorRingN(ringIndex).coordinates)
+                                ringIndex++
+                            } catch (e: Exception) {
+                                break
+                            }
+                        }
+
+                        // Convert all rings to JSON
+                        for (ring in allRings) {
+                            val ringCoords = mapper.createArrayNode()
+                            for (coord in ring) {
+                                ringCoords.add(mapper.createArrayNode().apply {
+                                    add(coord.x)
+                                    add(coord.y)
+                                })
+                            }
+                            polyCoords.add(ringCoords)
+                        }
+
+                        coordinates.add(polyCoords)
+                    }
+
+                    set("coordinates", coordinates)
+                }
+                else -> {
+                    // For other geometry types, just return empty coordinates
+                    set("coordinates", mapper.createArrayNode())
+                }
+            }
+        }
+        return geom
     }
 }

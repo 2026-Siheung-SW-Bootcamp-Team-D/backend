@@ -8,6 +8,7 @@ import org.springframework.web.bind.MethodArgumentNotValidException
 import org.springframework.web.bind.annotation.ExceptionHandler
 import org.springframework.web.bind.annotation.RestControllerAdvice
 import org.springframework.http.converter.HttpMessageNotReadableException
+import org.springframework.web.servlet.resource.NoResourceFoundException
 
 /**
  * 컨트롤러와 서비스에서 발생한 예외를 API 명세의 오류 JSON으로 변환하는 공통 처리기다.
@@ -43,6 +44,12 @@ class GlobalExceptionHandler {
         exception: HttpMessageNotReadableException,
         request: HttpServletRequest,
     ): ResponseEntity<ErrorResponse> = response(ErrorCode.INVALID_ARGUMENT, emptyMap(), request)
+
+    @ExceptionHandler(NoResourceFoundException::class)
+    fun handleNoResourceFound(
+        exception: NoResourceFoundException,
+        request: HttpServletRequest,
+    ): ResponseEntity<ErrorResponse> = response(ErrorCode.RESOURCE_NOT_FOUND, emptyMap(), request)
 
     @ExceptionHandler(Exception::class)
     fun handleUnexpectedException(

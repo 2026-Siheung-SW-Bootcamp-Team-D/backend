@@ -53,13 +53,10 @@ class BoardService(
 
     @Transactional
     fun patch(boardId: String, principal: ParticipantPrincipal, request: PatchBoardRequest): BoardResponse {
-        checks.requireBoard(principal, boardId); checks.requireHost(principal)
+        checks.requireBoard(principal, boardId)
         val board = findBoardForUpdate(boardId)
         if (board.status == BoardStatus.CLOSED) conflict()
-        request.dateRange?.let(::validateDates)
-        if (request.status != null && request.status != BoardStatus.CLOSED) throw BusinessException(ErrorCode.INVALID_ARGUMENT)
-        board.update(request.name?.let { normalized(it, 2, 40) }, request.dateRange?.start, request.dateRange?.end, request.purpose)
-        if (request.status == BoardStatus.CLOSED) board.close()
+        board.update(request.name?.let { normalized(it, 2, 40) }, null, null, request.purpose)
         boards.flush()
         return BoardResponse(board.publicId, board.name, range(board), board.purpose, board.status, counts = counts(board), updatedAt = board.updatedAt)
     }
@@ -116,6 +113,7 @@ class BoardService(
     fun selectPlace(boardId: String, placeId: String, principal: ParticipantPrincipal): BoardResponse {
         checks.requireBoard(principal, boardId)
         val board = findBoardForUpdate(boardId)
+        if (board.status == BoardStatus.CLOSED) conflict()
         val boardId_internal = requireNotNull(board.id)
 
         // placeId를 publicId로 해석해 placeId_internal을 구한다. ACTIVE 장소만 선택 가능
@@ -138,6 +136,7 @@ class BoardService(
     fun clearSelection(boardId: String, principal: ParticipantPrincipal) {
         checks.requireBoard(principal, boardId)
         val board = findBoardForUpdate(boardId)
+        if (board.status == BoardStatus.CLOSED) conflict()
         board.clearSelection(principal.participantId, Instant.now(clock))
         boards.flush()
     }

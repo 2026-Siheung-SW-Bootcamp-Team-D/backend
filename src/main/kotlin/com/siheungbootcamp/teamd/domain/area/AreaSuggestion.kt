@@ -2,18 +2,18 @@ package com.siheungbootcamp.teamd.domain.area
 
 import com.siheungbootcamp.teamd.global.persistence.JsonValue
 import jakarta.persistence.*
-import tools.jackson.databind.JsonNode
 import java.time.Instant
 
 /**
- * 지역 탐색 결과의 후보 장소.
+ * P7 Task 4: 지역 탐색 결과의 canonical 기준점.
  *
- * 각 후보는 Kakao Local 검색 결과를 저장하며,
- * metrics에는 교집합 조각 정보를, reasons에는 검색 기준점 설명을 담는다.
+ * area_candidate에서 area_suggestion으로 이름을 바꾼 엔티티로,
+ * Kakao Local 검색 결과를 저장한다.
+ * provider는 공급자(기본 KAKAO), center_distance_m은 참여자 대표 중심으로부터의 거리를 저장한다.
  */
 @Entity
-@Table(name = "area_candidate")
-class AreaCandidate(
+@Table(name = "area_suggestion")
+class AreaSuggestion(
     @Column(name = "public_id", nullable = false, unique = true)
     val publicId: String,
     @Column(name = "job_id", nullable = false)
@@ -34,6 +34,10 @@ class AreaCandidate(
     val reasonsJson: String,
     @Column(name = "rank", nullable = false)
     val rank: Int,
+    @Column(name = "provider", nullable = false)
+    val provider: String = "KAKAO",
+    @Column(name = "center_distance_m", nullable = false)
+    val centerDistanceMeters: Int = 0,
 ) {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)

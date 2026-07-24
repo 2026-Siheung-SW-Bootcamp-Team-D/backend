@@ -28,6 +28,18 @@ class GeometryService {
     companion object {
         // 지구 반지름 (km)
         private const val EARTH_RADIUS_KM = 6371.0
+
+        // Haversine 공식으로 두 지점 간 거리를 미터 단위로 계산한다.
+        // lon1, lat1: 시작점 (경도, 위도, WGS84)
+        // lon2, lat2: 끝점 (경도, 위도, WGS84)
+        fun haversineDistanceMeters(lon1: Double, lat1: Double, lon2: Double, lat2: Double): Int {
+            val dLat = (lat2 - lat1) * PI / 180.0
+            val dLon = (lon2 - lon1) * PI / 180.0
+            val a = sin(dLat / 2) * sin(dLat / 2) +
+                    cos(lat1 * PI / 180.0) * cos(lat2 * PI / 180.0) * sin(dLon / 2) * sin(dLon / 2)
+            val c = 2 * atan2(kotlin.math.sqrt(a), kotlin.math.sqrt(1 - a))
+            return (EARTH_RADIUS_KM * c * 1000).toInt()
+        }
     }
 
     /**

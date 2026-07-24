@@ -12,7 +12,7 @@ import com.siheungbootcamp.teamd.infra.external.kakao.KakaoLocalClient
 import org.springframework.data.domain.Pageable
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
-import java.net.URL
+import java.net.URI
 
 /**
  * 장소 검색·등록·조회·삭제의 비즈니스 로직을 담당한다.
@@ -33,25 +33,31 @@ class PlaceService(
     private val checks: AuthorizationChecks,
     private val usageCheckers: List<PlaceUsageChecker> = emptyList(),
 ) {
-    fun searchKeyword(boardId: String, principal: ParticipantPrincipal, query: String, lon: Double?, lat: Double?, radius: Int?): PlaceCandidateResponse {
+    fun searchKeyword(
+        boardId: String,
+        principal: ParticipantPrincipal,
+        query: String,
+        lon: Double?,
+        lat: Double?,
+        radius: Int?,
+        provider: String = "KAKAO",
+    ): PlaceCandidateResponse {
         checks.requireBoard(principal, boardId)
+        if (provider != "KAKAO") throw BusinessException(ErrorCode.INVALID_ARGUMENT)
         validateQuery(query)
         validateSearchLocation(lon, lat, radius)
 
         val candidates = kakao.searchKeyword(query, lon, lat, radius)
         return PlaceCandidateResponse(
-            provider = "KAKAO",
             items = candidates.map { c ->
                 PlaceCandidateResponse.CandidateItem(
                     providerPlaceId = c.providerPlaceId,
                     name = c.name,
                     category = c.category,
-                    internalCategory = c.internalCategory,
-                    addressName = c.addressName,
-                    roadAddressName = c.roadAddressName,
-                    lon = c.lon,
-                    lat = c.lat,
-                    providerPlaceUrl = c.providerPlaceUrl,
+                    roadAddress = c.roadAddressName.ifBlank { null },
+                    jibunAddress = c.addressName.ifBlank { null },
+                    location = LocationResponse(c.lon, c.lat),
+                    sourceUrl = c.providerPlaceUrl,
                     distanceMeters = c.distanceMeters,
                 )
             },
@@ -67,11 +73,9 @@ class PlaceService(
         return AddressCandidateResponse(
             items = candidates.map { c ->
                 AddressCandidateResponse.AddressItem(
-                    addressName = c.addressName,
-                    roadAddressName = c.roadAddressName,
-                    addressType = c.addressType,
-                    lon = c.lon,
-                    lat = c.lat,
+                    label = c.addressName,
+                    roadAddress = c.roadAddressName,
+                    location = LocationResponse(c.lon, c.lat),
                 )
             },
         )
@@ -83,8 +87,103 @@ class PlaceService(
 
         val result = kakao.coord2Address(lon, lat)
         return CoordinateAddressResponse(
-            roadAddressName = result.roadAddressName,
-            addressName = result.addressName,
+            label = result.roadAddressName ?: result.addressName,
+            roadAddress = result.roadAddressName,
+            jibunAddress = result.addressName,
+            location = LocationResponse(lon, lat),
+        )
+    }
+
+    /**
+     * P7 Task 3: 주변 장소 검색
+     * 공통 영역 밖 좌표도 검색 가능하며 검색 결과는 place 테이블에 저장하지 않는다.
+     * q 또는 category 중 정확히 하나를 전달해야 한다.
+     */
+    fun searchNearby(
+        boardId: String,
+        principal: ParticipantPrincipal,
+        lon: Double?,
+        lat: Double?,
+        query: String?,
+        category: String?,
+        radius: Int,
+    ): PlaceCandidateResponse {
+        checks.requireBoard(principal, boardId)
+
+        // 검증: lon/lat 필수
+        if (lon == null || lat == null) {
+            throw BusinessException(ErrorCode.INVALID_ARGUMENT)
+        }
+
+        // 검증: lon/lat 범위
+        if (lon < -180.0 || lon > 180.0 || lat < -90.0 || lat > 90.0) {
+            throw BusinessException(ErrorCode.INVALID_ARGUMENT)
+        }
+
+        // 검증: q와 category 동시 전달 불가
+        if (query != null && category != null) {
+            throw BusinessException(ErrorCode.INVALID_ARGUMENT)
+        }
+
+        // 검증: q와 category 모두 누락 불가
+        if (query.isNullOrBlank() && category.isNullOrBlank()) {
+            throw BusinessException(ErrorCode.INVALID_ARGUMENT)
+        }
+
+        // 검증: radius 범위
+        if (radius < 100 || radius > 5000) {
+            throw BusinessException(ErrorCode.INVALID_ARGUMENT)
+        }
+
+        val validCategories = setOf("RESTAURANT", "CAFE", "CULTURE", "TOUR", "ACCOMMODATION", "PLAY")
+        val trimmedQuery = query?.trim()
+
+        // 검증: category 값
+        if (!category.isNullOrBlank()) {
+            if (category !in validCategories) {
+                throw BusinessException(ErrorCode.INVALID_ARGUMENT)
+            }
+        }
+
+        // 검증: q 길이 (2자 이상)
+        if (!trimmedQuery.isNullOrEmpty() && trimmedQuery.length !in 2..60) {
+            throw BusinessException(ErrorCode.INVALID_ARGUMENT)
+        }
+
+        val candidates = if (!category.isNullOrBlank()) {
+            val kakaoGroupCode = when (category) {
+                "RESTAURANT" -> "FD6"
+                "CAFE" -> "CE7"
+                "CULTURE" -> "CT1"
+                "TOUR" -> "AT4"
+                "ACCOMMODATION" -> "AD5"
+                "PLAY" -> "카페" // PLAY는 keyword 검색 사용
+                else -> throw BusinessException(ErrorCode.INVALID_ARGUMENT)
+            }
+
+            if (category == "PLAY") {
+                kakao.searchKeyword("놀이터", lon, lat, radius, 15)
+            } else {
+                kakao.searchCategory(kakaoGroupCode, lon, lat, radius, 15)
+            }
+        } else {
+            kakao.searchKeyword(trimmedQuery!!, lon, lat, radius, 15)
+        }
+
+        return PlaceCandidateResponse(
+            items = candidates.map { c ->
+                PlaceCandidateResponse.CandidateItem(
+                    providerPlaceId = c.providerPlaceId,
+                    name = c.name,
+                    category = c.category,
+                    roadAddress = c.roadAddressName.ifBlank { null },
+                    jibunAddress = c.addressName.ifBlank { null },
+                    location = LocationResponse(c.lon, c.lat),
+                    sourceUrl = c.providerPlaceUrl,
+                    distanceMeters = c.distanceMeters,
+                )
+            },
+            hint = if (candidates.isEmpty()) "결과가 없습니다." else null,
         )
     }
 
@@ -96,14 +195,13 @@ class PlaceService(
         val proposer = participants.findByIdAndBoardId(principal.participantId, boardId_internal)
             ?: throw BusinessException(ErrorCode.FORBIDDEN)
 
-        // Validate internal category
-        if (request.internalCategory !in VALID_CATEGORIES) {
+        // Validate input method
+        val validInputMethods = setOf("SEARCH_PICK", "EXTERNAL_LINK", "MANUAL_PIN")
+        if (!validInputMethods.contains(request.source.inputMethod)) {
             throw BusinessException(ErrorCode.INVALID_ARGUMENT)
         }
-
-        // Validate source
-        val validSources = setOf("SEARCH_SELECT", "MANUAL_PIN")
-        if (!validSources.contains(request.source)) {
+        val validSourceProviders = setOf("KAKAO", "NAVER", "EXTERNAL", "MANUAL")
+        if (request.source.sourceProvider !in validSourceProviders) {
             throw BusinessException(ErrorCode.INVALID_ARGUMENT)
         }
 
@@ -111,15 +209,15 @@ class PlaceService(
             board = board,
             proposer = proposer,
             name = request.name,
-            lon = request.lon,
-            lat = request.lat,
-            addressName = request.addressName,
-            roadAddressName = request.roadAddressName,
-            internalCategory = request.internalCategory,
-            provider = request.provider,
-            providerPlaceId = request.providerPlaceId,
-            providerPlaceUrl = validateProviderUrl(request.providerPlaceUrl),
-            source = request.source,
+            lon = request.location.lon,
+            lat = request.location.lat,
+            addressName = request.jibunAddress,
+            roadAddressName = request.roadAddress,
+            internalCategory = request.category ?: "기타",
+            provider = request.source.sourceProvider,
+            providerPlaceId = request.source.providerPlaceId,
+            providerPlaceUrl = validateProviderUrl(request.source.sourceUrl, request.source.sourceProvider),
+            source = request.source.inputMethod,
         )
 
         val saved = places.save(place)
@@ -256,27 +354,34 @@ class PlaceService(
     private fun toResponse(place: Place, commentCount: Int, likeCount: Int = 0, likedByMe: Boolean = false, selected: Boolean = false): PlaceResponse {
         return PlaceResponse(
             placeId = place.publicId,
+            boardId = place.board.publicId,
+            status = place.status.name,
             name = place.name,
-            lon = place.lon,
-            lat = place.lat,
-            addressName = place.addressName,
-            roadAddressName = place.roadAddressName,
-            internalCategory = place.internalCategory,
-            provider = place.provider,
-            providerPlaceId = place.providerPlaceId,
-            providerPlaceUrl = place.providerPlaceUrl,
-            source = place.source,
-            proposerId = place.proposer.publicId,
+            category = place.internalCategory,
+            roadAddress = place.roadAddressName,
+            jibunAddress = place.addressName,
+            location = LocationDto(
+                lon = place.lon,
+                lat = place.lat,
+            ),
+            source = SourceDto(
+                sourceProvider = place.provider ?: "MANUAL",
+                providerPlaceId = place.providerPlaceId,
+                sourceUrl = place.providerPlaceUrl,
+                inputMethod = place.source,
+            ),
+            createdByParticipantId = place.proposer.publicId,
             commentCount = commentCount,
             createdAt = place.createdAt,
             likeCount = likeCount,
             likedByMe = likedByMe,
             selected = selected,
+            archivedAt = place.deletedAt,
         )
     }
 
     private fun validateQuery(query: String) {
-        if (query.length < 2 || query.length > 80) {
+        if (query.length < 2 || query.length > 60) {
             throw BusinessException(ErrorCode.INVALID_ARGUMENT)
         }
         // Check if query looks like a URL
@@ -333,15 +438,26 @@ class PlaceService(
         private val VALID_CATEGORIES = setOf("RESTAURANT", "CAFE", "PLAY", "BAR", "CULTURE", "ATTRACTION", "TRANSIT", "ETC")
     }
 
-    private fun validateProviderUrl(url: String?): String? {
-        if (url.isNullOrBlank()) return null
-        val allowedHosts = setOf("place.map.kakao.com")
-        val host = try {
-            URL(url).host
+    private fun validateProviderUrl(url: String?, provider: String): String? {
+        if (url.isNullOrBlank()) {
+            if (provider == "MANUAL") return null
+            return null
+        }
+        val uri = try {
+            URI(url)
         } catch (e: Exception) {
             throw BusinessException(ErrorCode.INVALID_ARGUMENT)
         }
-        if (!allowedHosts.contains(host)) throw BusinessException(ErrorCode.INVALID_ARGUMENT)
+        if (uri.scheme != "https" || uri.host.isNullOrBlank()) throw BusinessException(ErrorCode.INVALID_ARGUMENT)
+        val host = uri.host.lowercase()
+        val allowed = when (provider) {
+            "KAKAO" -> host == "place.map.kakao.com"
+            "NAVER" -> host == "map.naver.com" || host == "naver.me" || host.endsWith(".map.naver.com")
+            "EXTERNAL" -> true
+            "MANUAL" -> false
+            else -> false
+        }
+        if (!allowed) throw BusinessException(ErrorCode.INVALID_ARGUMENT)
         return url
     }
 }

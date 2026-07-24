@@ -40,8 +40,48 @@ curl -s http://localhost:8080/actuator/health | jq
 
 `status`가 `UP`이면 준비된 것이다. 스키마는 시작 시 Flyway `V1__baseline.sql`로 생성되며 H2는 사용하지 않는다.
 
+## 환경변수
+
+| 변수 | 설명 | 예시 |
+|---|---|---|
+| `DB_PASSWORD` | PostgreSQL 암호 | `local-teamd-password` |
+| `TOKEN_PEPPER` | 참여 토큰 HMAC pepper | `local-only-random-pepper` |
+| `ORIGIN_ENC_KEY` | 출발지 좌표 AES 암호화 키 (base64) | `openssl rand -base64 32` 결과 |
+| `KAKAO_REST_KEY` | Kakao Local API 키 (테스트에서는 stub 사용) | 테스트 불필요 |
+| `ODSAY_API_KEY` | ODsay API 키 (테스트에서는 stub 사용) | 테스트 불필요 |
+
+## 프로필별 설정
+
+| 프로필 | 용도 | DB | 외부 API | 
+|---|---|---|---|
+| `local` | 개발용 | PostgreSQL (Docker) | 실제 호출 |
+| `test` | 통합 테스트 | Testcontainers (PostgreSQL) | Stub 서버 |
+
+**`app.legacy-api-enabled` (기본값: `false`)**
+- `false`: P7 신규 API만 활성화 (Place, Comment, 지역)
+- `true`: P3-P5 레거시 API도 활성화 (Vote, Course, Departure) - 레거시 테스트에서만 사용
+
 ## API 문서와 수동 테스트
 
 - Swagger UI: <http://localhost:8080/swagger-ui/index.html>
 - OpenAPI JSON: <http://localhost:8080/v3/api-docs>
 - 도메인별 수동 테스트: [`docs/manual-testing/README.md`](docs/manual-testing/README.md)
+
+## 테스트 실행
+
+```bash
+# 전체 테스트 (Testcontainers 자동 사용)
+./gradlew test
+
+# 특정 테스트만 실행
+./gradlew test --tests 'P7*'
+./gradlew test --tests '*PlaceContractTest'
+
+# 레거시 API 테스트 (P3-P5)
+./gradlew test --tests '*P3*' --tests '*P4*' --tests '*P5*'
+```
+
+테스트 실행 시:
+- PostgreSQL, Kakao Local, ODsay 등 외부 의존성은 **Testcontainers 또는 stub 서버**로 자동 제공
+- 실제 API 키 불필요
+- 테스트 컨테이너 종료 시 데이터 폐기(일부 테스트 클래스 내부에서는 DB 상태를 공유할 수 있음)
