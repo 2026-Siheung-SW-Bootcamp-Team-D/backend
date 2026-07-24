@@ -67,6 +67,7 @@ class BoardController(private val service: BoardService, private val properties:
     @ApiResponse(responseCode = "200", description = "선택 성공")
     @ApiResponse(responseCode = "403", description = "다른 보드의 토큰")
     @ApiResponse(responseCode = "404", description = "보드 또는 장소 없음(또는 ACTIVE 상태가 아님)")
+    @ApiResponse(responseCode = "409", description = "보드가 종료됨")
     @RequiresBoardOpen
     @RateLimit(permits = 60, windowSeconds = 60, key = RateLimitKey.PARTICIPANT, scope = RateLimitScope.PARTICIPANT_GLOBAL)
     fun putSelectedPlace(
@@ -81,6 +82,7 @@ class BoardController(private val service: BoardService, private val properties:
     @ApiResponse(responseCode = "204", description = "선택 해제 성공 또는 선택된 장소 없음")
     @ApiResponse(responseCode = "403", description = "다른 보드의 토큰")
     @ApiResponse(responseCode = "404", description = "보드 없음")
+    @ApiResponse(responseCode = "409", description = "보드가 종료됨")
     @RequiresBoardOpen
     @RateLimit(permits = 60, windowSeconds = 60, key = RateLimitKey.PARTICIPANT, scope = RateLimitScope.PARTICIPANT_GLOBAL)
     fun deleteSelectedPlace(

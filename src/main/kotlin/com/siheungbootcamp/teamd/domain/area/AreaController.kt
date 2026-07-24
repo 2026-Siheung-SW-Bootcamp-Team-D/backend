@@ -29,6 +29,7 @@ class AreaController(
     @SecurityRequirement(name = "participantToken")
     @ApiResponse(responseCode = "202", description = "작업 접수, Location 헤더로 조회 위치 안내")
     @ApiResponse(responseCode = "400", description = "대상 참여자 1명 이하")
+    @ApiResponse(responseCode = "409", description = "보드가 종료됨")
     @ApiResponse(responseCode = "422", description = "출발지 미등록 참여자 포함")
     @RequiresBoardOpen
     fun createAreaSearchJob(

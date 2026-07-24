@@ -78,10 +78,10 @@ curl -s http://localhost:8080/actuator/health | jq
 ./gradlew test --tests '*PlaceContractTest'
 
 # 레거시 API 테스트 (P3-P5)
-./gradlew test --tests '*P3*,*P4*,*P5*'
+./gradlew test --tests '*P3*' --tests '*P4*' --tests '*P5*'
 ```
 
 테스트 실행 시:
 - PostgreSQL, Kakao Local, ODsay 등 외부 의존성은 **Testcontainers 또는 stub 서버**로 자동 제공
 - 실제 API 키 불필요
-- 각 테스트 후 데이터 자동 정리
+- 테스트 컨테이너 종료 시 데이터 폐기(일부 테스트 클래스 내부에서는 DB 상태를 공유할 수 있음)

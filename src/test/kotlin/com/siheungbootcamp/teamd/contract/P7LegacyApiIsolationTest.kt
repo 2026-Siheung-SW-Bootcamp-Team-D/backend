@@ -1,5 +1,6 @@
 package com.siheungbootcamp.teamd.contract
 
+import com.siheungbootcamp.teamd.domain.place.PlaceUsageChecker
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.context.SpringBootTest
@@ -13,6 +14,7 @@ import org.testcontainers.junit.jupiter.Container
 import org.testcontainers.junit.jupiter.Testcontainers
 import org.testcontainers.postgresql.PostgreSQLContainer
 import kotlin.test.assertFalse
+import kotlin.test.assertTrue
 
 /**
  * P7 레거시 API 격리 검증
@@ -30,6 +32,7 @@ import kotlin.test.assertFalse
 ])
 class P7LegacyApiIsolationTest(
     @Autowired private val mockMvc: MockMvc,
+    @Autowired private val placeUsageCheckers: List<PlaceUsageChecker>,
 ) {
     @Test
     fun `default profile hides legacy paths and controllers from OpenAPI`() {
@@ -52,6 +55,13 @@ class P7LegacyApiIsolationTest(
         // PublicSchedule must not exist in default profile
         assertFalse(api.contains("/public/schedules"), "공개 일정 경로는 기본 비활성화")
         assertFalse(api.contains("PublicScheduleController"), "공개 일정 컨트롤러는 기본 비활성화")
+    }
+
+    @Test
+    fun `default profile에서도 기존 레거시 장소 참조 검사는 유지된다`() {
+        val checkerNames = placeUsageCheckers.map { it::class.simpleName }
+        assertTrue("CoursePlaceUsageChecker" in checkerNames)
+        assertTrue("VotePlaceUsageChecker" in checkerNames)
     }
 
     companion object {

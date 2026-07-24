@@ -8,6 +8,7 @@ import com.siheungbootcamp.teamd.global.ratelimit.RateLimitKey
 import com.siheungbootcamp.teamd.global.ratelimit.RateLimitScope
 import com.siheungbootcamp.teamd.global.web.PageResponse
 import io.swagger.v3.oas.annotations.Operation
+import io.swagger.v3.oas.annotations.responses.ApiResponse
 import io.swagger.v3.oas.annotations.tags.Tag
 import org.springframework.data.domain.PageRequest
 import org.springframework.data.domain.Pageable
@@ -47,6 +48,7 @@ class CommentController(
 
     @PostMapping
     @Operation(summary = "댓글 작성", description = "장소에 댓글을 작성한다. 참여자당 20회/분 rate limit.")
+    @ApiResponse(responseCode = "409", description = "보드가 종료됨")
     @RateLimit(permits = 20, windowSeconds = 60, key = RateLimitKey.PARTICIPANT, scope = RateLimitScope.ENDPOINT)
     @RequiresBoardOpen
     fun create(
@@ -61,6 +63,7 @@ class CommentController(
 
     @PatchMapping("/{commentId}")
     @Operation(summary = "댓글 수정", description = "작성자만 댓글을 수정할 수 있다.")
+    @ApiResponse(responseCode = "409", description = "보드가 종료됨")
     @RequiresBoardOpen
     fun update(
         @PathVariable boardId: String,
@@ -75,6 +78,7 @@ class CommentController(
 
     @DeleteMapping("/{commentId}")
     @Operation(summary = "댓글 삭제", description = "작성자만 댓글을 삭제할 수 있다.")
+    @ApiResponse(responseCode = "409", description = "보드가 종료됨")
     @RequiresBoardOpen
     fun delete(
         @PathVariable boardId: String,

@@ -177,6 +177,7 @@ class PlaceController(private val service: PlaceService) {
     @ApiResponse(responseCode = "204", description = "좋아요 성공 또는 이미 좋아요함")
     @ApiResponse(responseCode = "403", description = "다른 보드의 토큰")
     @ApiResponse(responseCode = "404", description = "장소 또는 보드 없음")
+    @ApiResponse(responseCode = "409", description = "보드가 종료됨")
     @RateLimit(permits = 60, windowSeconds = 60, key = RateLimitKey.PARTICIPANT, scope = RateLimitScope.PARTICIPANT_GLOBAL)
     @RequiresBoardOpen
     fun putLike(
@@ -194,6 +195,7 @@ class PlaceController(private val service: PlaceService) {
     @ApiResponse(responseCode = "204", description = "좋아요 취소 성공 또는 좋아요하지 않음")
     @ApiResponse(responseCode = "403", description = "다른 보드의 토큰")
     @ApiResponse(responseCode = "404", description = "보드 또는 장소 없음")
+    @ApiResponse(responseCode = "409", description = "보드가 종료됨")
     @RateLimit(permits = 60, windowSeconds = 60, key = RateLimitKey.PARTICIPANT, scope = RateLimitScope.PARTICIPANT_GLOBAL)
     @RequiresBoardOpen
     fun deleteLike(
