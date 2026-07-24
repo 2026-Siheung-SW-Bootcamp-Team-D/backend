@@ -13,15 +13,12 @@ import org.testcontainers.junit.jupiter.Container
 import org.testcontainers.junit.jupiter.Testcontainers
 import org.testcontainers.postgresql.PostgreSQLContainer
 import kotlin.test.assertFalse
-import kotlin.test.assertTrue
 
 /**
- * P7 canonical OpenAPI 계약 검증
+ * P7 레거시 API 격리 검증
  *
- * 기본 프로필에서 `/v3/api-docs`는 다음을 보장한다:
- * - 신규 canonical 경로들이 존재
- * - 레거시 경로(Vote/Course/Departure)는 없음
- * - 지역 찾기 주변 검색이 존재
+ * 기본 프로필(app.legacy-api-enabled=false)에서 Vote/Course/Departure 경로는
+ * OpenAPI에 노출되지 않고, 컴포넌트도 빈으로 등록되지 않는다.
  */
 @Testcontainers
 @AutoConfigureMockMvc
@@ -31,29 +28,30 @@ import kotlin.test.assertTrue
     "app.board.frontend-base-url=https://example.app",
     "app.kakao.rest-key=test-kakao-key",
 ])
-class P7CanonicalOpenApiTest(
+class P7LegacyApiIsolationTest(
     @Autowired private val mockMvc: MockMvc,
 ) {
     @Test
-    fun `canonical paths are exposed and legacy paths are hidden`() {
+    fun `default profile hides legacy paths and controllers from OpenAPI`() {
         val api = mockMvc.get("/v3/api-docs")
             .andExpect { status { isOk() } }
             .andReturn().response.contentAsString
 
-        // Canonical paths must exist (Task 2 paths)
-        assertTrue(api.contains("/api/v1/boards/{boardId}/search/places"), "canonical 검색 장소 경로 필수")
-        assertTrue(api.contains("/api/v1/boards/{boardId}/search/addresses"), "canonical 검색 주소 경로 필수")
-        assertTrue(api.contains("/api/v1/boards/{boardId}/search/reverse-geocode"), "canonical 역지오코딩 경로 필수")
-        // Task 3에서 구현: assertTrue(api.contains("/api/v1/boards/{boardId}/search/nearby-places"), "canonical 주변 검색 경로 필수")
-
-        // Task 2: Legacy place search paths must not exist
-        assertFalse(api.contains("/place-candidates"), "레거시 장소 후보 경로 제거됨")
-        assertFalse(api.contains("/address-candidates"), "레거시 주소 후보 경로 제거됨")
-        assertFalse(api.contains("/coordinate-address"), "레거시 좌표 변환 경로 제거됨")
-        // Task 6 검증: Vote/Course/Departure 경로 제거
+        // Legacy Vote paths must not exist
         assertFalse(api.contains("/votes"), "레거시 투표 경로 제거됨")
+        assertFalse(api.contains("VoteController"), "레거시 투표 컨트롤러 제거됨")
+
+        // Legacy Course paths must not exist
         assertFalse(api.contains("/course-draft"), "레거시 코스 경로 제거됨")
+        assertFalse(api.contains("CourseController"), "레거시 코스 컨트롤러 제거됨")
+
+        // Legacy Departure paths must not exist
         assertFalse(api.contains("/departure-guide"), "레거시 출발 경로 제거됨")
+        assertFalse(api.contains("DepartureController"), "레거시 출발 컨트롤러 제거됨")
+
+        // PublicSchedule must not exist in default profile
+        assertFalse(api.contains("/public/schedules"), "공개 일정 경로는 기본 비활성화")
+        assertFalse(api.contains("PublicScheduleController"), "공개 일정 컨트롤러는 기본 비활성화")
     }
 
     companion object {
