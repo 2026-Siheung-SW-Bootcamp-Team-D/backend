@@ -187,14 +187,9 @@ class PlaceService(
         val proposer = participants.findByIdAndBoardId(principal.participantId, boardId_internal)
             ?: throw BusinessException(ErrorCode.FORBIDDEN)
 
-        // Validate internal category
-        if (request.internalCategory !in VALID_CATEGORIES) {
-            throw BusinessException(ErrorCode.INVALID_ARGUMENT)
-        }
-
-        // Validate source
-        val validSources = setOf("SEARCH_SELECT", "MANUAL_PIN")
-        if (!validSources.contains(request.source)) {
+        // Validate input method
+        val validInputMethods = setOf("SEARCH_PICK", "EXTERNAL_LINK", "MANUAL_PIN")
+        if (!validInputMethods.contains(request.source.inputMethod)) {
             throw BusinessException(ErrorCode.INVALID_ARGUMENT)
         }
 
@@ -202,15 +197,15 @@ class PlaceService(
             board = board,
             proposer = proposer,
             name = request.name,
-            lon = request.lon,
-            lat = request.lat,
-            addressName = request.addressName,
-            roadAddressName = request.roadAddressName,
-            internalCategory = request.internalCategory,
-            provider = request.provider,
-            providerPlaceId = request.providerPlaceId,
-            providerPlaceUrl = validateProviderUrl(request.providerPlaceUrl),
-            source = request.source,
+            lon = request.location.lon,
+            lat = request.location.lat,
+            addressName = request.jibunAddress,
+            roadAddressName = request.roadAddress,
+            internalCategory = request.category ?: "기타",
+            provider = request.source.sourceProvider,
+            providerPlaceId = request.source.providerPlaceId,
+            providerPlaceUrl = validateProviderUrl(request.source.sourceUrl),
+            source = request.source.inputMethod,
         )
 
         val saved = places.save(place)
@@ -347,17 +342,19 @@ class PlaceService(
     private fun toResponse(place: Place, commentCount: Int, likeCount: Int = 0, likedByMe: Boolean = false, selected: Boolean = false): PlaceResponse {
         return PlaceResponse(
             placeId = place.publicId,
+            status = if (place.deletedAt != null) "ARCHIVED" else "ACTIVE",
             name = place.name,
-            lon = place.lon,
-            lat = place.lat,
-            addressName = place.addressName,
-            roadAddressName = place.roadAddressName,
-            internalCategory = place.internalCategory,
-            provider = place.provider,
-            providerPlaceId = place.providerPlaceId,
-            providerPlaceUrl = place.providerPlaceUrl,
-            source = place.source,
-            proposerId = place.proposer.publicId,
+            location = LocationDto(
+                lon = place.lon,
+                lat = place.lat,
+            ),
+            source = SourceDto(
+                sourceProvider = place.provider ?: "MANUAL",
+                providerPlaceId = place.providerPlaceId,
+                sourceUrl = place.providerPlaceUrl,
+                inputMethod = place.source,
+            ),
+            createdByParticipantId = place.proposer.publicId,
             commentCount = commentCount,
             createdAt = place.createdAt,
             likeCount = likeCount,

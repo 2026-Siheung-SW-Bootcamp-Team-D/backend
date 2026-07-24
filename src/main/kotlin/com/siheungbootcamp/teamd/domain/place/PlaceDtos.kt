@@ -10,16 +10,30 @@ import java.time.Instant
 /**
  * 지도 좌표: 경도(lon)와 위도(lat)를 포함합니다.
  * WGS84 표준을 사용하며, lon은 경도, lat은 위도입니다.
+ * 요청/응답 모두에서 사용됩니다.
  */
-data class LocationResponse(
-    val lon: Double,
-    val lat: Double,
+data class LocationDto(
+    @field:DecimalMin("-180.0") @field:DecimalMax("180.0") val lon: Double,
+    @field:DecimalMin("-90.0") @field:DecimalMax("90.0") val lat: Double,
 )
 
 /**
  * 외부 API 공급자 정보: sourceProvider가 제공한 장소 정보를 정규화합니다.
  * 이 정보는 사용자가 검색 결과를 확인하거나 원본을 탐색할 때 사용됩니다.
  */
+data class SourceDto(
+    @field:Size(min = 1, max = 20) val sourceProvider: String,
+    @field:Size(max = 100) val providerPlaceId: String?,
+    @field:Size(max = 2048) val sourceUrl: String?,
+    @field:Size(min = 1, max = 50) val inputMethod: String,
+)
+
+// 검색 응답용 - LocationResponse 유지 (backward compatibility)
+data class LocationResponse(
+    val lon: Double,
+    val lat: Double,
+)
+
 data class PlaceSourceResponse(
     val sourceProvider: String,
     val providerPlaceId: String?,
@@ -29,34 +43,32 @@ data class PlaceSourceResponse(
 
 // Request DTOs
 
+/**
+ * POST /boards/{boardId}/places 요청 DTO.
+ * 중첩 구조의 location과 source를 포함합니다.
+ */
 data class CreatePlaceRequest(
-    @field:Size(min = 1, max = 100) val name: String,
-    @field:DecimalMin("-180.0") @field:DecimalMax("180.0") val lon: Double,
-    @field:DecimalMin("-90.0") @field:DecimalMax("90.0") val lat: Double,
-    @field:Size(max = 200) val addressName: String?,
-    @field:Size(max = 200) val roadAddressName: String?,
-    @field:Size(min = 1, max = 100) val internalCategory: String,
-    @field:Size(max = 20) val provider: String?,
-    @field:Size(max = 100) val providerPlaceId: String?,
-    @field:Size(max = 2048) val providerPlaceUrl: String?,
-    val source: String,
+    @field:Size(min = 1, max = 80) val name: String,
+    @field:Size(max = 100) val category: String?,
+    @field:Size(max = 200) val roadAddress: String?,
+    @field:Size(max = 200) val jibunAddress: String?,
+    val location: LocationDto,
+    val source: SourceDto,
 )
 
 // Response DTOs
 
+/**
+ * Canonical Place 응답 DTO.
+ * 중첩 구조의 location과 source, createdByParticipantId, status를 포함합니다.
+ */
 data class PlaceResponse(
     val placeId: String,
+    val status: String,
     val name: String,
-    val lon: Double,
-    val lat: Double,
-    val addressName: String?,
-    val roadAddressName: String?,
-    val internalCategory: String,
-    val provider: String?,
-    val providerPlaceId: String?,
-    val providerPlaceUrl: String?,
-    val source: String,
-    val proposerId: String,
+    val location: LocationDto,
+    val source: SourceDto,
+    val createdByParticipantId: String,
     val commentCount: Int,
     val createdAt: Instant,
     val likeCount: Int = 0,

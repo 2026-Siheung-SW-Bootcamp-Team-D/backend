@@ -55,22 +55,26 @@ class PlaceContractTest(
         val candidate = objectMapper.readTree(searchResult).path("items")[0]
         val placeId = candidate.path("providerPlaceId").asText()
 
-        // 장소 등록
+        // 장소 등록 (canonical nested 구조)
         val createResult = mockMvc.post("/api/v1/boards/${host.boardId}/places") {
             bearer(host.token)
             contentType = MediaType.APPLICATION_JSON
             content = """
             {
               "name": "${candidate.path("name").asText()}",
-              "lon": ${candidate.path("location").path("lon").asDouble()},
-              "lat": ${candidate.path("location").path("lat").asDouble()},
-              "addressName": "${candidate.path("addressName").asText()}",
-              "roadAddressName": "${candidate.path("roadAddressName").asText()}",
-              "internalCategory": "${candidate.path("internalCategory").asText()}",
-              "provider": "KAKAO",
-              "providerPlaceId": "$placeId",
-              "providerPlaceUrl": "${candidate.path("sourceUrl").asText()}",
-              "source": "SEARCH_SELECT"
+              "category": "${candidate.path("category").asText()}",
+              "roadAddress": "${candidate.path("roadAddress").asText()}",
+              "jibunAddress": "${candidate.path("jibunAddress").asText()}",
+              "location": {
+                "lon": ${candidate.path("location").path("lon").asDouble()},
+                "lat": ${candidate.path("location").path("lat").asDouble()}
+              },
+              "source": {
+                "sourceProvider": "KAKAO",
+                "providerPlaceId": "$placeId",
+                "sourceUrl": "${candidate.path("sourceUrl").asText()}",
+                "inputMethod": "SEARCH_PICK"
+              }
             }
             """.trimIndent()
         }.andExpect { status { isCreated() } }
@@ -78,6 +82,11 @@ class PlaceContractTest(
 
         val place = objectMapper.readTree(createResult)
         assertEquals(candidate.path("name").asText(), place.path("name").asText())
+        // Canonical response 검증
+        assertEquals(true, place.has("location"), "응답에 location nested 객체가 있어야 함")
+        assertEquals(true, place.has("source"), "응답에 source nested 객체가 있어야 함")
+        assertEquals(true, place.has("createdByParticipantId"), "응답에 createdByParticipantId가 있어야 함")
+        assertEquals(true, place.has("status"), "응답에 status가 있어야 함")
 
         // 목록 조회
         val listResult = mockMvc.get("/api/v1/boards/${host.boardId}/places") {
