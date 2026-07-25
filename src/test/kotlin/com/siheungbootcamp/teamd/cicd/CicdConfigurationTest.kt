@@ -88,17 +88,20 @@ class CicdConfigurationTest {
         assertContains(smoke, "/actuator/health")
         assertContains(smoke, "POST")
         assertContains(smoke, "/api/v1/boards")
+        assertContains(smoke, "creatorNickname")
+        assertContains(smoke, "participantToken")
         assertContains(smoke, "Authorization: Bearer")
         assertContains(smoke, "401")
+        assertFalse(smoke.contains("hostNickname"))
+        assertFalse(smoke.contains("dateRange"))
     }
 
     @Test
-    fun `smoke test 날짜는 서울 기준으로 내일부터 8일 후까지다`() {
+    fun `smoke test는 생성 응답의 최상위 참여 토큰을 사용한다`() {
         val smoke = read("scripts/smoke-test.sh")
 
-        assertContains(smoke, "TZ=Asia/Seoul")
-        assertContains(smoke, "+1 day")
-        assertContains(smoke, "+8 days")
+        assertContains(smoke, "body[\"participantToken\"]")
+        assertFalse(smoke.contains("body[\"participant\"][\"participantToken\"]"))
     }
 
     @Test
