@@ -6,7 +6,6 @@ spring:
 app:
   cors:
     allowed-origins: http://localhost:5173
-  external:
-    kakao-rest-key: ${KAKAO_REST_KEY:stub}
-    odsay-key: ${ODSAY_KEY:stub}
-    tmap-app-key: ${TMAP_APP_KEY:stub}
+  odsay:
+    api-key: ${ODSAY_API_KEY:stub}
+    base-url: https://api.odsay.com

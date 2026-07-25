@@ -9,6 +9,7 @@ import org.springframework.data.repository.query.Param
 interface BoardRepository : JpaRepository<Board, Long> {
     fun findByPublicId(publicId: String): Board?
     fun findByInviteCode(inviteCode: String): Board?
+    fun findByPublicToken(publicToken: String): Board?
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select b from Board b where b.publicId = :publicId")

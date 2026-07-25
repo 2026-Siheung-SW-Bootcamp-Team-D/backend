@@ -28,7 +28,8 @@ I2(자동 CI/CD)를 서두르지 말고, I1에서 **손으로 한 번 배포하�
 
 ### T-I0-3. 프로필·비밀 주입 경로
 - `application-prod.yml`은 **값이 아니라 환경변수 참조만** (`${DB_PASSWORD}` 형태)
-- 비밀 목록: `DB_PASSWORD`, `TOKEN_PEPPER`, `ORIGIN_ENC_KEY`, `KAKAO_REST_KEY`, `ODSAY_KEY`, `TMAP_APP_KEY`
+- 비밀 목록: `DB_PASSWORD`, `TOKEN_PEPPER`, `ORIGIN_ENC_KEY`, `KAKAO_REST_KEY`, `TMAP_APP_KEY`, 그리고 Secret Manager의 `ODSAY_KEY`
+- 애플리케이션 런타임 변수는 `ODSAY_API_KEY`다. VM 동기화는 Secret Manager의 `ODSAY_KEY` 값을 `ODSAY_API_KEY`로 기록한다.
 
 **주입 경로 (환경별로 값의 출처만 다르고 앱은 환경변수만 읽는다)**
 
@@ -73,7 +74,7 @@ I2(자동 CI/CD)를 서두르지 말고, I1에서 **손으로 한 번 배포하�
 | I1-13 | **Billing Budget 알림 생성** | 임계치 알림 수신 테스트 |
 | I1-14 | **수동 배포 1회 + 수동 롤백 1회** | 직전 이미지 태그로 복구 성공 |
 
-> ❓ 도메인은 서비스명 확정 후. 확정 전에는 고정 IP + 임시 도메인으로 진행하고, CORS는 Vercel Preview 오리진을 명시적으로 나열한다.
+> 운영 도메인은 `https://yeondang.com`, `https://www.yeondang.com`, API는 `https://api.yeondang.com`으로 확정했다. CORS에는 두 운영 오리진과 승인된 Vercel Preview 패턴을 명시적으로 유지한다.
 
 ---
 

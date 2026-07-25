@@ -13,7 +13,7 @@ class InviteCodeGenerator {
 }
 
 interface DepartureStaleNotifier { fun markStale(participantId: Long) }
-@Component class NoOpDepartureStaleNotifier : DepartureStaleNotifier { override fun markStale(participantId: Long) = Unit }
+interface DepartureStaleBoardNotifier { fun markStaleByCourse(boardId: Long) }
 
 /** P6 작업이 참여자의 기존 좌표를 사용 중인지 JSONB snapshot에서 확인하는 작은 경계다. */
 @Component

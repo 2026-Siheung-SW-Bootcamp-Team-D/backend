@@ -21,8 +21,6 @@ import org.testcontainers.junit.jupiter.Testcontainers
 import org.testcontainers.postgresql.PostgreSQLContainer
 import tools.jackson.databind.ObjectMapper
 import java.time.OffsetDateTime
-import java.time.LocalDate
-import java.time.ZoneId
 import java.time.Instant
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
@@ -72,14 +70,17 @@ class P1ContractTest(
     }
 
     @Test
-    fun `V1-4 멤버는 호스트 수정 API를 호출할 수 없다`() {
+    fun `V1-4 모든 참여자는 보드 기본 정보를 수정할 수 있다`() {
         val host = createBoard("권한 보드", "호스트")
         val member = join(host.inviteCode, "멤버")
         mockMvc.patch("/api/v1/boards/${host.boardId}") {
             bearer(member)
             contentType = MediaType.APPLICATION_JSON
             content = """{"name":"수정 이름"}"""
-        }.andExpect { status { isForbidden() }; jsonPath("$.error.code") { value("FORBIDDEN") } }
+        }.andExpect {
+            status { isOk() }
+            jsonPath("$.name") { value("수정 이름") }
+        }
     }
 
     @Test
@@ -132,18 +133,11 @@ class P1ContractTest(
     }
 
     @Test
-    fun `오늘은 거부하고 내일은 허용하며 보드 이름 앞뒤 공백을 제거한다`() {
-        val today = LocalDate.now(ZoneId.of("Asia/Seoul"))
+    fun `보드 이름 앞뒤 공백을 제거한다`() {
         mockMvc.post("/api/v1/boards") {
             contentType = MediaType.APPLICATION_JSON
-            content = """{"name":"오늘 보드","dateRange":{"start":"$today","end":"$today"},"hostNickname":"호스트"}"""
-        }.andExpect { status { isBadRequest() }; jsonPath("$.error.code") { value("INVALID_ARGUMENT") } }
-
-        val tomorrow = today.plusDays(1)
-        mockMvc.post("/api/v1/boards") {
-            contentType = MediaType.APPLICATION_JSON
-            content = """{"name":"  내일 보드  ","dateRange":{"start":"$tomorrow","end":"$tomorrow"},"hostNickname":"호스트"}"""
-        }.andExpect { status { isCreated() }; jsonPath("$.board.name") { value("내일 보드") } }
+            content = """{"name":"  새 보드  ","creatorNickname":"호스트"}"""
+        }.andExpect { status { isCreated() }; jsonPath("$.board.name") { value("새 보드") } }
     }
 
     @Test
@@ -160,7 +154,7 @@ class P1ContractTest(
     fun `참여 토큰을 발급하는 두 응답은 캐시를 금지한다`() {
         val created = mockMvc.post("/api/v1/boards") {
             contentType = MediaType.APPLICATION_JSON
-            content = """{"name":"캐시 보드","dateRange":{"start":"2099-01-01","end":"2099-01-01"},"hostNickname":"호스트"}"""
+            content = """{"name":"캐시 보드","creatorNickname":"호스트"}"""
         }.andExpect { status { isCreated() }; header { string("Cache-Control", "private, no-store") } }
             .andReturn().response.contentAsString
         val inviteCode = objectMapper.readTree(created)["invitation"]["inviteCode"].asText()
@@ -170,12 +164,7 @@ class P1ContractTest(
     }
 
     @Test
-    fun `잘못된 날짜와 origin enum은 400 INVALID_ARGUMENT다`() {
-        mockMvc.post("/api/v1/boards") {
-            contentType = MediaType.APPLICATION_JSON
-            content = """{"name":"파싱 보드","dateRange":{"start":"not-a-date","end":"2099-01-01"},"hostNickname":"호스트"}"""
-        }.andExpect { status { isBadRequest() }; jsonPath("$.error.code") { value("INVALID_ARGUMENT") } }
-
+    fun `잘못된 origin enum은 400 INVALID_ARGUMENT다`() {
         val host = createBoard("enum 보드", "호스트")
         mockMvc.patch("/api/v1/boards/${host.boardId}/participants/me") {
             bearer(host.token); contentType = MediaType.APPLICATION_JSON
@@ -206,20 +195,18 @@ class P1ContractTest(
     @Test
     fun `PATCH board는 이미 CLOSED인 보드의 재수정을 409로 거부한다`() {
         val host = createBoard("종료 재수정 보드", "호스트")
-        mockMvc.patch("/api/v1/boards/${host.boardId}") {
-            bearer(host.token); contentType = MediaType.APPLICATION_JSON; content = """{"status":"CLOSED"}"""
-        }.andExpect { status { isOk() } }
+        closeBoard(host.boardId)
         mockMvc.patch("/api/v1/boards/${host.boardId}") {
             bearer(host.token); contentType = MediaType.APPLICATION_JSON; content = """{"name":"수정 불가"}"""
         }.andExpect { status { isConflict() }; jsonPath("$.error.code") { value("RESOURCE_CONFLICT") } }
     }
 
     @Test
-    fun `GET invitation은 MEMBER를 403 교차 보드 토큰을 404로 거부한다`() {
+    fun `GET invitation은 MEMBER도 조회 가능하고 교차 보드 토큰을 404로 거부한다`() {
         val boardA = createBoard("초대 권한 에이", "호스트")
         val member = join(boardA.inviteCode, "멤버")
         mockMvc.get("/api/v1/boards/${boardA.boardId}/invitation") { bearer(member) }.andExpect {
-            status { isForbidden() }; jsonPath("$.error.code") { value("FORBIDDEN") }
+            status { isOk() }; jsonPath("$.inviteCode") { value(boardA.inviteCode) }
         }
         val boardB = createBoard("초대 권한 비", "호스트")
         mockMvc.get("/api/v1/boards/${boardB.boardId}/invitation") { bearer(boardA.token) }.andExpect {
@@ -237,9 +224,7 @@ class P1ContractTest(
         }.andExpect { status { isNotFound() }; jsonPath("$.error.code") { value("INVITE_NOT_FOUND") } }
 
         val closed = createBoard("종료 참여 보드", "호스트")
-        mockMvc.patch("/api/v1/boards/${closed.boardId}") {
-            bearer(closed.token); contentType = MediaType.APPLICATION_JSON; content = """{"status":"CLOSED"}"""
-        }.andExpect { status { isOk() } }
+        closeBoard(closed.boardId)
         mockMvc.post("/api/v1/invitations/${closed.inviteCode}/participants") {
             contentType = MediaType.APPLICATION_JSON; content = """{"nickname":"멤버"}"""
         }.andExpect { status { isConflict() }; jsonPath("$.error.code") { value("RESOURCE_CONFLICT") } }
@@ -272,7 +257,7 @@ class P1ContractTest(
     fun `공개 생성 엔드포인트는 필수 필드 누락을 400으로 거부한다`() {
         mockMvc.post("/api/v1/boards") {
             contentType = MediaType.APPLICATION_JSON
-            content = """{"name":"필드 누락","dateRange":{"start":"2099-01-01","end":"2099-01-01"}}"""
+            content = """{"name":"필드 누락"}"""
         }.andExpect { status { isBadRequest() }; jsonPath("$.error.code") { value("INVALID_ARGUMENT") } }
 
         val host = createBoard("참여 필드 보드", "호스트")
@@ -297,21 +282,51 @@ class P1ContractTest(
             jsonPath("$.items[1].origin", not(hasKey<String>("lon")))
             jsonPath("$.items[1].origin", not(hasKey<String>("lat")))
         }
-        mockMvc.patch("/api/v1/boards/${host.boardId}") {
-            bearer(host.token); contentType = MediaType.APPLICATION_JSON; content = """{"status":"CLOSED"}"""
-        }.andExpect { status { isOk() } }
+        closeBoard(host.boardId)
         mockMvc.patch("/api/v1/boards/${host.boardId}/participants/me") {
             bearer(member); contentType = MediaType.APPLICATION_JSON; content = """{"nickname":"새 이름"}"""
         }.andExpect { status { isConflict() }; jsonPath("$.error.code") { value("RESOURCE_CONFLICT") } }
     }
 
+    @Test
+    fun `생성 응답은 개설 참여자와 일회성 토큰을 분리하고 해시 초대 링크를 반환한다`() {
+        mockMvc.post("/api/v1/boards") {
+            contentType = MediaType.APPLICATION_JSON
+            content = """{"name":"계약 보드","purpose":"저녁","creatorNickname":"종민"}"""
+        }.andExpect {
+            status { isCreated() }
+            jsonPath("$.board.dateRange") { doesNotExist() }
+            jsonPath("$.creatorParticipant.nickname") { value("종민") }
+            jsonPath("$.creatorParticipant.participantToken") { doesNotExist() }
+            jsonPath("$.participantToken") { exists() }
+            jsonPath("$.invitation.inviteUrl") { value(org.hamcrest.Matchers.startsWith("https://example.app/#/join/")) }
+        }
+    }
+
+    @Test
+    fun `origin null은 출발지를 삭제하고 origin 생략은 유지한다`() {
+        val host = createBoard("출발지 삭제 보드", "호스트")
+        mockMvc.patch("/api/v1/boards/${host.boardId}/participants/me") {
+            bearer(host.token); contentType = MediaType.APPLICATION_JSON
+            content = """{"origin":{"label":"정왕역","lon":126.7,"lat":37.3,"source":"MANUAL_PIN"}}"""
+        }.andExpect { status { isOk() }; jsonPath("$.origin.registered") { value(true) } }
+
+        mockMvc.patch("/api/v1/boards/${host.boardId}/participants/me") {
+            bearer(host.token); contentType = MediaType.APPLICATION_JSON; content = """{"nickname":"새 이름"}"""
+        }.andExpect { status { isOk() }; jsonPath("$.origin.registered") { value(true) } }
+
+        mockMvc.patch("/api/v1/boards/${host.boardId}/participants/me") {
+            bearer(host.token); contentType = MediaType.APPLICATION_JSON; content = """{"origin":null}"""
+        }.andExpect { status { isOk() }; jsonPath("$.origin.registered") { value(false) } }
+    }
+
     private fun createBoard(name: String, nickname: String): CreatedBoard {
         val body = mockMvc.post("/api/v1/boards") {
             contentType = MediaType.APPLICATION_JSON
-            content = """{"name":"$name","dateRange":{"start":"2099-01-01","end":"2099-01-02"},"purpose":"테스트","hostNickname":"$nickname"}"""
+            content = """{"name":"$name","purpose":"테스트","creatorNickname":"$nickname"}"""
         }.andExpect { status { isCreated() } }.andReturn().response.contentAsString
         val json = objectMapper.readTree(body)
-        return CreatedBoard(json["board"]["boardId"].asText(), json["participant"]["participantToken"].asText(), json["invitation"]["inviteCode"].asText())
+        return CreatedBoard(json["board"]["boardId"].asText(), json["participantToken"].asText(), json["invitation"]["inviteCode"].asText())
     }
 
     private fun join(inviteCode: String, nickname: String): String {
@@ -319,6 +334,12 @@ class P1ContractTest(
             contentType = MediaType.APPLICATION_JSON; content = """{"nickname":"$nickname"}"""
         }.andExpect { status { isCreated() } }.andReturn().response.contentAsString
         return objectMapper.readTree(body)["participantToken"].asText()
+    }
+
+    private fun closeBoard(boardId: String) {
+        jdbcClient.sql("update board set status='CLOSED', updated_at=now() where public_id=:boardId")
+            .param("boardId", boardId)
+            .update()
     }
 
     private fun org.springframework.test.web.servlet.MockHttpServletRequestDsl.bearer(token: String) {

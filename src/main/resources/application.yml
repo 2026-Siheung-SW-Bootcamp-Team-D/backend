@@ -36,3 +36,12 @@ app:
   kakao:
     rest-key: ${KAKAO_REST_KEY:}
     base-url: https://dapi.kakao.com
+  tmap:
+    app-key: ${TMAP_APP_KEY:}
+    base-url: https://apis.openapi.sk.com
+  odsay:
+    api-key: ${ODSAY_API_KEY:}
+    base-url: https://api.odsay.com
+  legacy-api-enabled: false
+  job:
+    enabled: ${JOB_ENABLED:false}

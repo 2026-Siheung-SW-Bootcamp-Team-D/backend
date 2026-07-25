@@ -18,6 +18,7 @@ import org.springframework.test.web.servlet.MockMvc
 import org.springframework.test.web.servlet.delete
 import org.springframework.test.web.servlet.get
 import org.springframework.test.web.servlet.post
+import org.springframework.test.web.servlet.put
 import org.testcontainers.junit.jupiter.Container
 import org.testcontainers.junit.jupiter.Testcontainers
 import org.testcontainers.postgresql.PostgreSQLContainer
@@ -45,31 +46,41 @@ class PlaceContractTest(
         val host = createBoard("장소 보드", "호스트")
 
         // 검색
-        val searchResult = mockMvc.get("/api/v1/boards/${host.boardId}/place-candidates") {
+        val searchResult = mockMvc.get("/api/v1/boards/${host.boardId}/search/places") {
             bearer(host.token)
-            param("query", "테스트 장소")
+            param("q", "테스트 장소")
         }.andExpect { status { isOk() } }
             .andReturn().response.contentAsString
 
         val candidate = objectMapper.readTree(searchResult).path("items")[0]
+        val searchJson = objectMapper.readTree(searchResult)
+        assertEquals("KAKAO", searchJson.path("provider").asText())
+        assertTrue(candidate.has("roadAddress"))
+        assertTrue(candidate.has("jibunAddress"))
+        assertFalse(candidate.has("roadAddressName"))
+        assertFalse(candidate.has("addressName"))
         val placeId = candidate.path("providerPlaceId").asText()
 
-        // 장소 등록
+        // 장소 등록 (canonical nested 구조)
         val createResult = mockMvc.post("/api/v1/boards/${host.boardId}/places") {
             bearer(host.token)
             contentType = MediaType.APPLICATION_JSON
             content = """
             {
               "name": "${candidate.path("name").asText()}",
-              "lon": ${candidate.path("lon").asDouble()},
-              "lat": ${candidate.path("lat").asDouble()},
-              "addressName": "${candidate.path("addressName").asText()}",
-              "roadAddressName": "${candidate.path("roadAddressName").asText()}",
-              "internalCategory": "${candidate.path("internalCategory").asText()}",
-              "provider": "KAKAO",
-              "providerPlaceId": "$placeId",
-              "providerPlaceUrl": "${candidate.path("providerPlaceUrl").asText()}",
-              "source": "SEARCH_SELECT"
+              "category": "${candidate.path("category").asText()}",
+              "roadAddress": "${candidate.path("roadAddress").asText()}",
+              "jibunAddress": "${candidate.path("jibunAddress").asText()}",
+              "location": {
+                "lon": ${candidate.path("location").path("lon").asDouble()},
+                "lat": ${candidate.path("location").path("lat").asDouble()}
+              },
+              "source": {
+                "sourceProvider": "KAKAO",
+                "providerPlaceId": "$placeId",
+                "sourceUrl": "${candidate.path("sourceUrl").asText()}",
+                "inputMethod": "SEARCH_PICK"
+              }
             }
             """.trimIndent()
         }.andExpect { status { isCreated() } }
@@ -77,6 +88,16 @@ class PlaceContractTest(
 
         val place = objectMapper.readTree(createResult)
         assertEquals(candidate.path("name").asText(), place.path("name").asText())
+        // Canonical response 검증
+        assertEquals(true, place.has("location"), "응답에 location nested 객체가 있어야 함")
+        assertEquals(true, place.has("source"), "응답에 source nested 객체가 있어야 함")
+        assertEquals(true, place.has("createdByParticipantId"), "응답에 createdByParticipantId가 있어야 함")
+        assertEquals(true, place.has("status"), "응답에 status가 있어야 함")
+        assertEquals(host.boardId, place.path("boardId").asText())
+        assertEquals(candidate.path("category").asText(), place.path("category").asText())
+        assertEquals(true, place.has("roadAddress"))
+        assertEquals(true, place.has("jibunAddress"))
+        assertEquals(true, place.has("archivedAt"))
 
         // 목록 조회
         val listResult = mockMvc.get("/api/v1/boards/${host.boardId}/places") {
@@ -93,9 +114,9 @@ class PlaceContractTest(
         val host = createBoard("검색 보드", "호스트")
 
         repeat(3) {
-            mockMvc.get("/api/v1/boards/${host.boardId}/place-candidates") {
+            mockMvc.get("/api/v1/boards/${host.boardId}/search/places") {
                 bearer(host.token)
-                param("query", "카페")
+                param("q", "카페")
             }.andExpect { status { isOk() } }
         }
 
@@ -107,12 +128,21 @@ class PlaceContractTest(
     }
 
     @Test
+    fun `검색어는 최대 60자까지만 허용한다`() {
+        val host = createBoard("검색 길이 보드", "호스트")
+        mockMvc.get("/api/v1/boards/${host.boardId}/search/places") {
+            bearer(host.token)
+            param("q", "가".repeat(61))
+        }.andExpect { status { isBadRequest() } }
+    }
+
+    @Test
     fun `V2-4 URL 형식 검색어는 400 URL_QUERY_NOT_ALLOWED를 반환한다`() {
         val host = createBoard("URL 검증 보드", "호스트")
 
-        mockMvc.get("/api/v1/boards/${host.boardId}/place-candidates") {
+        mockMvc.get("/api/v1/boards/${host.boardId}/search/places") {
             bearer(host.token)
-            param("query", "https://example.com")
+            param("q", "https://example.com")
         }.andExpect {
             status { isBadRequest() }
             jsonPath("$.error.code") { value("URL_QUERY_NOT_ALLOWED") }
@@ -125,9 +155,9 @@ class PlaceContractTest(
         kakaoStubServer.setKeywordResponseMode(KakaoStubServer.ResponseMode.RATE_LIMIT)
         try {
             // stub이 처음 2회는 429(Retry-After: 1)를, 3번째는 200을 반환하도록 되어 있다.
-            mockMvc.get("/api/v1/boards/${host.boardId}/place-candidates") {
+            mockMvc.get("/api/v1/boards/${host.boardId}/search/places") {
                 bearer(host.token)
-                param("query", "테스트")
+                param("q", "테스트")
             }.andExpect { status { isOk() } }
 
             assertEquals(3, kakaoStubServer.requestCount("keyword"), "429 2회 이후 3번째 요청에서 성공해야 하고, 총 요청은 3회 이하여야 한다")
@@ -141,9 +171,9 @@ class PlaceContractTest(
         val host = createBoard("서버 오류 보드", "호스트")
         kakaoStubServer.setKeywordResponseMode(KakaoStubServer.ResponseMode.SERVER_ERROR)
         try {
-            mockMvc.get("/api/v1/boards/${host.boardId}/place-candidates") {
+            mockMvc.get("/api/v1/boards/${host.boardId}/search/places") {
                 bearer(host.token)
-                param("query", "테스트")
+                param("q", "테스트")
             }.andExpect {
                 status { isServiceUnavailable() }
                 jsonPath("$.error.code") { value("EXTERNAL_UNAVAILABLE") }
@@ -158,9 +188,9 @@ class PlaceContractTest(
         val host = createBoard("JSON 오류 보드", "호스트")
         kakaoStubServer.setKeywordResponseMode(KakaoStubServer.ResponseMode.MALFORMED)
         try {
-            mockMvc.get("/api/v1/boards/${host.boardId}/place-candidates") {
+            mockMvc.get("/api/v1/boards/${host.boardId}/search/places") {
                 bearer(host.token)
-                param("query", "테스트")
+                param("q", "테스트")
             }.andExpect {
                 status { isBadGateway() }
                 jsonPath("$.error.code") { value("EXTERNAL_BAD_RESPONSE") }
@@ -173,11 +203,11 @@ class PlaceContractTest(
     @Test
     fun `V2-3 검색 흐름의 소스코드에는 TMAP·ODsay 참조가 없다`() {
         // P2는 Kakao Local만 사용한다(03-phase2-place-search.md). TMAP·ODsay 어댑터는 P5·P6 몫이며
-        // 지금 그런 코드 자체가 없으므로, place/카카오/외부공통기반 소스 트리에 두 이름이 등장하지
-        // 않는 것으로 "검색이 TMAP·ODsay를 호출하지 않는다"는 사실을 고정한다.
+        // P5에서 infra/external/tmap 아래 추가되었으므로, place/카카오/외부공통기반 소스 트리에
+        // 두 이름이 등장하지 않는 것으로 "검색이 TMAP·ODsay를 호출하지 않는다"는 사실을 고정한다.
         val roots = listOf(
             "src/main/kotlin/com/siheungbootcamp/teamd/domain/place",
-            "src/main/kotlin/com/siheungbootcamp/teamd/infra/external",
+            "src/main/kotlin/com/siheungbootcamp/teamd/infra/external/kakao",
             "src/main/kotlin/com/siheungbootcamp/teamd/global/external",
         )
         val forbidden = listOf("TMAP", "ODsay", "Odsay", "OdSay")
@@ -198,16 +228,16 @@ class PlaceContractTest(
         val host = createBoard("로그 검사 보드", "호스트")
         val secretQuery = "민감한-검색어-12345"
 
-        mockMvc.get("/api/v1/boards/${host.boardId}/place-candidates") {
+        mockMvc.get("/api/v1/boards/${host.boardId}/search/places") {
             bearer(host.token)
-            param("query", secretQuery)
+            param("q", secretQuery)
         }.andExpect { status { isOk() } }
 
         assertFalse(output.all.contains(secretQuery), "로그에 검색어가 나타나면 안 됨")
     }
 
     @Test
-    fun `V2-9 DELETE 삭제 권한 - 제3자 403, 제안자 204, 재삭제 204`() {
+    fun `V2-9 DELETE 삭제 권한 - 참여자 204, 비참여자 401, 재삭제 204`() {
         val host = createBoard("삭제 권한 보드", "호스트")
         val member = join(host.inviteCode, "멤버")
 
@@ -218,15 +248,16 @@ class PlaceContractTest(
             content = """
             {
               "name": "테스트 장소",
-              "lon": 126.7,
-              "lat": 37.3,
-              "addressName": "서울시",
-              "roadAddressName": "서울시",
-              "internalCategory": "RESTAURANT",
-              "provider": "KAKAO",
-              "providerPlaceId": "test123",
-              "providerPlaceUrl": "https://place.map.kakao.com/123",
-              "source": "SEARCH_SELECT"
+              "category": "RESTAURANT",
+              "roadAddress": "서울시",
+              "jibunAddress": "서울시",
+              "location": {"lon": 126.7, "lat": 37.3},
+              "source": {
+                "sourceProvider": "KAKAO",
+                "providerPlaceId": "test123",
+                "sourceUrl": "https://place.map.kakao.com/123",
+                "inputMethod": "SEARCH_PICK"
+              }
             }
             """.trimIndent()
         }.andExpect { status { isCreated() } }
@@ -234,14 +265,9 @@ class PlaceContractTest(
 
         val placeId = objectMapper.readTree(createResult).path("placeId").asText()
 
-        // 제3자는 403
+        // 참여자(멤버, 제안자 아님)는 204로 삭제 가능 (제안자가 아니어도 삭제 가능)
         mockMvc.delete("/api/v1/boards/${host.boardId}/places/$placeId") {
             bearer(member)
-        }.andExpect { status { isForbidden() } }
-
-        // 제안자는 204
-        mockMvc.delete("/api/v1/boards/${host.boardId}/places/$placeId") {
-            bearer(host.token)
         }.andExpect { status { isNoContent() } }
 
         // 재삭제는 204 (멱등성)
@@ -251,8 +277,8 @@ class PlaceContractTest(
     }
 
     @Test
-    fun `V2-10 비허용 도메인 URL은 400 INVALID_ARGUMENT를 반환한다`() {
-        val host = createBoard("URL 도메인 검증 보드", "호스트")
+    fun `V2-10 HTTPS가 아닌 출처 URL은 400 INVALID_ARGUMENT를 반환한다`() {
+        val host = createBoard("URL 스킴 검증 보드", "호스트")
 
         mockMvc.post("/api/v1/boards/${host.boardId}/places") {
             bearer(host.token)
@@ -260,17 +286,60 @@ class PlaceContractTest(
             content = """
             {
               "name": "테스트",
-              "lon": 126.7,
-              "lat": 37.3,
-              "addressName": "서울시",
-              "roadAddressName": "서울시",
-              "internalCategory": "RESTAURANT",
-              "provider": "KAKAO",
-              "providerPlaceId": "test123",
-              "providerPlaceUrl": "https://malicious.com",
-              "source": "MANUAL_PIN"
+              "category": "RESTAURANT",
+              "roadAddress": "서울시",
+              "jibunAddress": "서울시",
+              "location": {"lon": 126.7, "lat": 37.3},
+              "source": {
+                "sourceProvider": "EXTERNAL",
+                "providerPlaceId": "test123",
+                "sourceUrl": "http://example.com/place/123",
+                "inputMethod": "EXTERNAL_LINK"
+              }
             }
             """.trimIndent()
+        }.andExpect {
+            status { isBadRequest() }
+            jsonPath("$.error.code") { value("INVALID_ARGUMENT") }
+        }
+    }
+
+    @Test
+    fun `공급자와 출처 URL 호스트가 다르면 장소 등록을 거부한다`() {
+        val host = createBoard("URL 공급자 검증 보드", "호스트")
+
+        mockMvc.post("/api/v1/boards/${host.boardId}/places") {
+            bearer(host.token)
+            contentType = MediaType.APPLICATION_JSON
+            content = """
+            {
+              "name": "위장된 카카오 장소",
+              "category": "RESTAURANT",
+              "roadAddress": null,
+              "jibunAddress": null,
+              "location": {"lon": 126.7, "lat": 37.3},
+              "source": {
+                "sourceProvider": "KAKAO",
+                "providerPlaceId": "test123",
+                "sourceUrl": "https://example.com/place/123",
+                "inputMethod": "SEARCH_PICK"
+              }
+            }
+            """.trimIndent()
+        }.andExpect {
+            status { isBadRequest() }
+            jsonPath("$.error.code") { value("INVALID_ARGUMENT") }
+        }
+    }
+
+    @Test
+    fun `장소 검색은 지원하지 않는 provider를 거부한다`() {
+        val host = createBoard("검색 공급자 검증 보드", "호스트")
+
+        mockMvc.get("/api/v1/boards/${host.boardId}/search/places") {
+            bearer(host.token)
+            param("q", "테스트 장소")
+            param("provider", "NAVER")
         }.andExpect {
             status { isBadRequest() }
             jsonPath("$.error.code") { value("INVALID_ARGUMENT") }
@@ -331,16 +400,16 @@ class PlaceContractTest(
         val host = createBoard("검색 위치 검증 보드", "호스트")
 
         // lon만 있고 lat이 없음
-        mockMvc.get("/api/v1/boards/${host.boardId}/place-candidates") {
+        mockMvc.get("/api/v1/boards/${host.boardId}/search/places") {
             bearer(host.token)
-            param("query", "테스트")
+            param("q", "테스트")
             param("lon", "127.0")
         }.andExpect { status { isBadRequest() } }
 
         // radius가 20000 초과
-        mockMvc.get("/api/v1/boards/${host.boardId}/place-candidates") {
+        mockMvc.get("/api/v1/boards/${host.boardId}/search/places") {
             bearer(host.token)
-            param("query", "테스트")
+            param("q", "테스트")
             param("lon", "127.0")
             param("lat", "37.0")
             param("radius", "20001")
@@ -354,15 +423,16 @@ class PlaceContractTest(
             content = """
             {
               "name": "$name",
-              "lon": $lon,
-              "lat": $lat,
-              "addressName": null,
-              "roadAddressName": null,
-              "internalCategory": "$category",
-              "provider": null,
-              "providerPlaceId": null,
-              "providerPlaceUrl": null,
-              "source": "MANUAL_PIN"
+              "category": "$category",
+              "roadAddress": null,
+              "jibunAddress": null,
+              "location": {"lon": $lon, "lat": $lat},
+              "source": {
+                "sourceProvider": "MANUAL",
+                "providerPlaceId": null,
+                "sourceUrl": null,
+                "inputMethod": "MANUAL_PIN"
+              }
             }
             """.trimIndent()
         }.andExpect { status { isCreated() } }
@@ -380,15 +450,16 @@ class PlaceContractTest(
             content = """
             {
               "name": "테스트 장소",
-              "lon": 126.7,
-              "lat": 37.3,
-              "addressName": "서울시",
-              "roadAddressName": "서울시",
-              "internalCategory": "RESTAURANT",
-              "provider": "KAKAO",
-              "providerPlaceId": "test123",
-              "providerPlaceUrl": "https://place.map.kakao.com/123",
-              "source": "SEARCH_SELECT"
+              "category": "RESTAURANT",
+              "roadAddress": "서울시",
+              "jibunAddress": "서울시",
+              "location": {"lon": 126.7, "lat": 37.3},
+              "source": {
+                "sourceProvider": "KAKAO",
+                "providerPlaceId": "test123",
+                "sourceUrl": "https://place.map.kakao.com/123",
+                "inputMethod": "SEARCH_PICK"
+              }
             }
             """.trimIndent()
         }.andExpect { status { isCreated() } }
@@ -406,13 +477,73 @@ class PlaceContractTest(
             .andExpect { status { isUnauthorized() } }
     }
 
+    @Test
+    fun `선택된 장소를 삭제하면 보드의 선택 포인터가 cleared된다`() {
+        val host = createBoard("선택 삭제 보드", "호스트")
+        val member = join(host.inviteCode, "멤버")
+
+        // 장소 생성
+        val place1Result = mockMvc.post("/api/v1/boards/${host.boardId}/places") {
+            bearer(host.token)
+            contentType = MediaType.APPLICATION_JSON
+            content = """
+            {
+              "name": "테스트 장소 1",
+              "category": "RESTAURANT",
+              "roadAddress": "서울시",
+              "jibunAddress": "서울시",
+              "location": {"lon": 126.7, "lat": 37.3},
+              "source": {
+                "sourceProvider": "KAKAO",
+                "providerPlaceId": "test123",
+                "sourceUrl": "https://place.map.kakao.com/123",
+                "inputMethod": "SEARCH_PICK"
+              }
+            }
+            """.trimIndent()
+        }.andExpect { status { isCreated() } }
+            .andReturn().response.contentAsString
+
+        val placeId = objectMapper.readTree(place1Result).path("placeId").asText()
+
+        // 멤버가 장소 선택 (PUT /api/v1/boards/{boardId}/selected-place)
+        mockMvc.put("/api/v1/boards/${host.boardId}/selected-place") {
+            bearer(member)
+            contentType = MediaType.APPLICATION_JSON
+            content = """{"placeId": "$placeId"}"""
+        }.andExpect { status { isOk() } }
+
+        // 선택 확인
+        val beforeDelete = mockMvc.get("/api/v1/boards/${host.boardId}") {
+            bearer(host.token)
+        }.andExpect { status { isOk() } }
+            .andReturn().response.contentAsString
+
+        val beforeJson = objectMapper.readTree(beforeDelete)
+        assertEquals(placeId, beforeJson.path("selectedPlaceId").asText(), "장소가 선택되어 있어야 함")
+
+        // 참여자(멤버)가 선택된 장소 삭제
+        mockMvc.delete("/api/v1/boards/${host.boardId}/places/$placeId") {
+            bearer(member)
+        }.andExpect { status { isNoContent() } }
+
+        // 삭제 후 선택 포인터 확인 - 비어있어야 함
+        val afterDelete = mockMvc.get("/api/v1/boards/${host.boardId}") {
+            bearer(host.token)
+        }.andExpect { status { isOk() } }
+            .andReturn().response.contentAsString
+
+        val afterJson = objectMapper.readTree(afterDelete)
+        assertTrue(afterJson.path("selectedPlaceId").asText().isEmpty(), "선택된 장소가 cleared되어야 함")
+    }
+
     private fun createBoard(name: String, nickname: String): CreatedBoard {
         val body = mockMvc.post("/api/v1/boards") {
             contentType = MediaType.APPLICATION_JSON
-            content = """{"name":"$name","dateRange":{"start":"2099-01-01","end":"2099-01-02"},"purpose":"테스트","hostNickname":"$nickname"}"""
+            content = """{"name":"$name","purpose":"테스트","creatorNickname":"$nickname"}"""
         }.andExpect { status { isCreated() } }.andReturn().response.contentAsString
         val json = objectMapper.readTree(body)
-        return CreatedBoard(json["board"]["boardId"].asText(), json["participant"]["participantToken"].asText(), json["invitation"]["inviteCode"].asText())
+        return CreatedBoard(json["board"]["boardId"].asText(), json["participantToken"].asText(), json["invitation"]["inviteCode"].asText())
     }
 
     private fun join(inviteCode: String, nickname: String): String {

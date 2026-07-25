@@ -98,8 +98,6 @@ class BoardClosureConcurrencyTest(
     private fun fixture(): Fixture {
         val board = boards.saveAndFlush(Board(
             name = "동시성 보드",
-            dateStart = LocalDate.of(2099, 1, 1),
-            dateEnd = LocalDate.of(2099, 1, 1),
             purpose = null,
             inviteCode = "L${System.nanoTime().toString().takeLast(9)}",
             inviteExpiresAt = Instant.parse("2099-02-01T00:00:00Z"),

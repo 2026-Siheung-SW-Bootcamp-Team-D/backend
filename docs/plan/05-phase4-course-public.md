@@ -26,7 +26,7 @@
 2. `orderIndex`는 1부터 연속, 중복 없음
 3. **1번만 `FIRST_MEETING`**, 나머지는 `MEAL`/`CAFE`/`PLAY`/`ETC`
 4. `scheduledAt`은 직전 stop보다 늦음
-5. 보드에 등록된 **ACTIVE 장소만** (삭제된 장소 placeId면 `400 INVALID_ARGUMENT`)
+5. 보드에 등록된 **ACTIVE 장소만** (삭제된 장소 placeId면 `400 INVALID_ARGUMENT`) — 이 규칙은 **저장 시점(PUT/확정)에만** 적용된다. 이미 저장된 초안이 참조하는 장소가 **나중에** 삭제되는 것은 막지 않는다(usage checker는 확정 코스만 보호). `GET /course-draft`는 그런 스톱도 숨기지 않고 그대로 반환하되 `placeDeleted: boolean`으로 표시해 FE가 구분하게 한다. `legs`는 삭제 여부와 무관하게 항상 전체 스톱 기준으로 계산한다(2026-07-23 코드 리뷰 반영, `10-fe-contract-sync.md` 통보 이력 참고)
 6. `If-Match` 불일치 → **`412 VERSION_MISMATCH` + 최신 `ETag` 반환**
 7. `If-Match` 헤더 자체가 없으면 `400 INVALID_ARGUMENT` (조용한 덮어쓰기 금지)
 

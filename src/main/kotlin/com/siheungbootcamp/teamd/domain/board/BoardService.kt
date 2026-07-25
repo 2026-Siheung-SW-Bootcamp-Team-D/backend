@@ -10,7 +10,6 @@ import org.springframework.transaction.annotation.Transactional
 import java.nio.ByteBuffer
 import java.time.Clock
 import java.time.Instant
-import java.time.LocalDate
 import java.time.ZoneId
 import java.time.temporal.ChronoUnit
 import java.util.Locale
@@ -34,38 +33,33 @@ class BoardService(
 
     @Transactional
     fun create(request: CreateBoardRequest, frontendBaseUrl: String): CreateBoardResponse {
-        validateDates(request.dateRange)
         val boardName = normalized(request.name, 2, 40)
-        val hostNickname = normalized(request.hostNickname, 1, 20)
-        val board = boards.save(Board(name = boardName, dateStart = request.dateRange.start, dateEnd = request.dateRange.end,
-            purpose = request.purpose, inviteCode = uniqueInviteCode(), inviteExpiresAt = Instant.now(clock).plus(30, ChronoUnit.DAYS)))
+        val creatorNickname = normalized(request.creatorNickname, 1, 20)
+        val board = boards.save(Board(name = boardName, purpose = request.purpose, inviteCode = uniqueInviteCode(), inviteExpiresAt = Instant.now(clock).plus(30, ChronoUnit.DAYS)))
         val publicId = com.siheungbootcamp.teamd.global.id.PublicId.generate(com.siheungbootcamp.teamd.global.id.IdPrefix.PARTICIPANT)
         val token = ParticipantToken.generate(publicId)
-        val host = participants.save(Participant(publicId, board, hostNickname, ParticipantRole.HOST, tokenHasher.hash(token.secret), colors[0]))
-        return CreateBoardResponse(summary(board), CreatedParticipant(host.publicId, host.nickname, host.role.name, token.value), invitation(board, frontendBaseUrl))
+        val host = participants.save(Participant(publicId, board, creatorNickname, ParticipantRole.HOST, tokenHasher.hash(token.secret), colors[0]))
+        return CreateBoardResponse(summary(board), CreatedParticipant(host.publicId, host.nickname, host.role.name, host.avatarColor), invitation(board, frontendBaseUrl), token.value)
     }
 
     fun get(boardId: String, principal: ParticipantPrincipal): BoardResponse {
         checks.requireBoard(principal, boardId)
         val board = findBoard(boardId)
-        return BoardResponse(board.publicId, board.name, range(board), board.purpose, board.status, counts = counts(board), updatedAt = board.updatedAt)
+        return toResponseWithSelection(board)
     }
 
     @Transactional
     fun patch(boardId: String, principal: ParticipantPrincipal, request: PatchBoardRequest): BoardResponse {
-        checks.requireBoard(principal, boardId); checks.requireHost(principal)
+        checks.requireBoard(principal, boardId)
         val board = findBoardForUpdate(boardId)
         if (board.status == BoardStatus.CLOSED) conflict()
-        request.dateRange?.let(::validateDates)
-        if (request.status != null && request.status != BoardStatus.CLOSED) throw BusinessException(ErrorCode.INVALID_ARGUMENT)
-        board.update(request.name?.let { normalized(it, 2, 40) }, request.dateRange?.start, request.dateRange?.end, request.purpose)
-        if (request.status == BoardStatus.CLOSED) board.close()
+        board.update(request.name?.let { normalized(it, 2, 40) }, request.purpose)
         boards.flush()
-        return BoardResponse(board.publicId, board.name, range(board), board.purpose, board.status, counts = counts(board), updatedAt = board.updatedAt)
+        return BoardResponse(board.publicId, board.name, board.purpose, board.status, counts = counts(board), updatedAt = board.updatedAt)
     }
 
     fun invitation(boardId: String, principal: ParticipantPrincipal, baseUrl: String): InvitationResponse {
-        checks.requireBoard(principal, boardId); checks.requireHost(principal)
+        checks.requireBoard(principal, boardId)
         return invitation(findBoard(boardId), baseUrl)
     }
 
@@ -102,9 +96,11 @@ class BoardService(
         val board = findBoardForUpdate(boardId)
         if (board.status == BoardStatus.CLOSED) conflict()
         request.nickname?.let { participant.rename(normalized(it, 1, 20)) }
-        request.origin?.let { origin ->
+        if (request.originProvided) {
             if (jobChecker.exists(participant.publicId)) conflict()
-            participant.changeOrigin(origin.label, encryptOrigin(origin.lon, origin.lat), origin.source, origin.providerPlaceId)
+            request.origin?.let { origin ->
+                participant.changeOrigin(origin.label, encryptOrigin(origin.lon, origin.lat), origin.source, origin.providerPlaceId)
+            } ?: participant.clearOrigin()
             staleNotifier.markStale(requireNotNull(participant.id))
         }
         val point = participant.originCiphertext?.let(::decryptOrigin)
@@ -112,9 +108,51 @@ class BoardService(
             OriginResponse(point != null, participant.originLabel, point?.first, point?.second))
     }
 
-    private fun validateDates(value: DateRangeRequest) {
-        if (!value.start.isAfter(LocalDate.now(clock)) || value.end.isBefore(value.start) || ChronoUnit.DAYS.between(value.start, value.end) > 30) throw BusinessException(ErrorCode.INVALID_ARGUMENT)
+    @Transactional
+    fun selectPlace(boardId: String, placeId: String, principal: ParticipantPrincipal): BoardResponse {
+        checks.requireBoard(principal, boardId)
+        val board = findBoardForUpdate(boardId)
+        if (board.status == BoardStatus.CLOSED) conflict()
+        val boardId_internal = requireNotNull(board.id)
+
+        // placeId를 publicId로 해석해 placeId_internal을 구한다. ACTIVE 장소만 선택 가능
+        val placeIdInternal = try {
+            jdbc.sql("select id from place where public_id = :publicId and board_id = :boardId and deleted_at is null and status = 'ACTIVE'")
+                .param("publicId", placeId)
+                .param("boardId", boardId_internal)
+                .query(Long::class.java)
+                .single()
+        } catch (e: Exception) {
+            throw BusinessException(ErrorCode.RESOURCE_NOT_FOUND)
+        }
+
+        board.select(placeIdInternal, principal.participantId, Instant.now(clock))
+        boards.flush()
+        return toResponseWithSelection(board)
     }
+
+    @Transactional
+    fun clearSelection(boardId: String, principal: ParticipantPrincipal) {
+        checks.requireBoard(principal, boardId)
+        val board = findBoardForUpdate(boardId)
+        if (board.status == BoardStatus.CLOSED) conflict()
+        board.clearSelection(principal.participantId, Instant.now(clock))
+        boards.flush()
+    }
+
+    private fun toResponseWithSelection(b: Board): BoardResponse {
+        val selectedPlacePublicId = b.selectedPlaceId?.let { id ->
+            jdbc.sql("select public_id from place where id = :id").param("id", id).query(String::class.java).single()
+        }
+        val selectedByParticipantPublicId = b.selectedByParticipantId?.let { id ->
+            jdbc.sql("select public_id from participant where id = :id").param("id", id).query(String::class.java).single()
+        }
+        return BoardResponse(b.publicId, b.name, b.purpose, b.status, counts = counts(b), updatedAt = b.updatedAt,
+            selectedPlaceId = selectedPlacePublicId,
+            selectedByParticipantId = selectedByParticipantPublicId,
+            selectedAt = b.selectedAt)
+    }
+
     private fun uniqueInviteCode(): String = generateSequence(inviteCodes::generate).first { boards.findByInviteCode(it) == null }
     private fun validInvitation(code: String): Board = boards.findByInviteCode(code.trim().uppercase(Locale.ROOT))?.takeIf { it.inviteExpiresAt.isAfter(Instant.now(clock)) } ?: throw BusinessException(ErrorCode.INVITE_NOT_FOUND)
     private fun validInvitationForUpdate(code: String): Board = boards.findByInviteCodeForUpdate(code.trim().uppercase(Locale.ROOT))
@@ -122,9 +160,8 @@ class BoardService(
         ?: throw BusinessException(ErrorCode.INVITE_NOT_FOUND)
     private fun findBoard(id: String) = boards.findByPublicId(id) ?: throw BusinessException(ErrorCode.RESOURCE_NOT_FOUND)
     private fun findBoardForUpdate(id: String) = boards.findByPublicIdForUpdate(id) ?: throw BusinessException(ErrorCode.RESOURCE_NOT_FOUND)
-    private fun summary(b: Board) = BoardSummary(b.publicId, b.name, b.status, dateRange = range(b))
-    private fun range(b: Board) = DateRangeResponse(b.dateStart, b.dateEnd)
-    private fun invitation(b: Board, base: String) = InvitationResponse(b.inviteCode, "${base.trimEnd('/')}/j/${b.inviteCode}", b.inviteExpiresAt)
+    private fun summary(b: Board) = BoardSummary(b.publicId, b.name, b.purpose, b.status)
+    private fun invitation(b: Board, base: String) = InvitationResponse(b.inviteCode, "${base.trimEnd('/')}/#/join/${b.inviteCode}", b.inviteExpiresAt)
     private fun counts(b: Board): BoardCounts { val id = requireNotNull(b.id); return BoardCounts(participants.countByBoardId(id), jdbc.sql("select count(*) from place where board_id=:id and deleted_at is null").param("id", id).query(Long::class.java).single(), jdbc.sql("select count(*) from place_comment c join place p on p.id=c.place_id where p.board_id=:id and c.deleted_at is null").param("id", id).query(Long::class.java).single()) }
     private fun encryptOrigin(lon: Double, lat: Double) = originCipher.encrypt(ByteBuffer.allocate(16).putDouble(lon).putDouble(lat).array())
     private fun decryptOrigin(bytes: ByteArray): Pair<Double, Double> { val b = ByteBuffer.wrap(originCipher.decrypt(bytes)); return b.double to b.double }

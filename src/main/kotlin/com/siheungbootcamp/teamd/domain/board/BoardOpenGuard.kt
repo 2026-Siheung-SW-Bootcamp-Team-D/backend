@@ -4,8 +4,8 @@ import com.siheungbootcamp.teamd.global.error.BusinessException
 import com.siheungbootcamp.teamd.global.error.ErrorCode
 import jakarta.servlet.http.HttpServletRequest
 import jakarta.servlet.http.HttpServletResponse
+import org.springframework.beans.factory.ObjectProvider
 import org.springframework.context.annotation.Configuration
-import org.springframework.boot.autoconfigure.condition.ConditionalOnBean
 import org.springframework.web.method.HandlerMethod
 import org.springframework.web.servlet.HandlerInterceptor
 import org.springframework.web.servlet.HandlerMapping
@@ -30,9 +30,10 @@ class BoardOpenInterceptor(private val boards: BoardRepository) : HandlerInterce
 }
 
 @Configuration
-@ConditionalOnBean(BoardRepository::class)
-class BoardWebConfiguration(private val boards: BoardRepository) : WebMvcConfigurer {
+class BoardWebConfiguration(private val boards: ObjectProvider<BoardRepository>) : WebMvcConfigurer {
     override fun addInterceptors(registry: InterceptorRegistry) {
-        registry.addInterceptor(BoardOpenInterceptor(boards)).addPathPatterns("/api/**")
+        boards.ifAvailable {
+            registry.addInterceptor(BoardOpenInterceptor(it)).addPathPatterns("/api/**")
+        }
     }
 }

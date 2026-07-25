@@ -18,6 +18,7 @@ class CicdConfigurationTest {
         val workflow = read(".github/workflows/ci.yml")
 
         assertContains(workflow, "pull_request:")
+        assertContains(workflow, "branches: [main, develop]")
         assertContains(workflow, "./gradlew build")
         assertContains(workflow, "actions/upload-artifact@")
         assertFalse(workflow.contains("gcloud compute"))
@@ -33,6 +34,8 @@ class CicdConfigurationTest {
         assertContains(workflow, "workload_identity_provider:")
         assertContains(workflow, "docker push")
         assertContains(workflow, "${'$'}{{ github.sha }}")
+        assertContains(workflow, "IMAGE_REPOSITORY:")
+        assertContains(workflow, "'${'$'}{IMAGE_REPOSITORY}'")
         assertContains(workflow, "--tunnel-through-iap")
         assertContains(workflow, "gcloud sql backups list")
         assertFalse(workflow.contains("credentials_json"))
@@ -49,6 +52,30 @@ class CicdConfigurationTest {
         assertContains(deploy, "/actuator/health")
         assertContains(deploy, "smoke-test.sh")
         assertContains(deploy, "chmod 600")
+        assertFalse(deploy.contains("project-f70dd7ef-e577-4b2a-bbd"))
+    }
+
+    @Test
+    fun `운영 배포 경로는 실제 도메인 설정을 전달하고 sslip 임시 도메인을 포함하지 않는다`() {
+        val workflow = read(".github/workflows/cd.yml")
+        val deploy = read("scripts/deploy.sh")
+        val deployTest = read("scripts/tests/deploy-test.sh")
+        val envExample = read(".env.example")
+
+        assertContains(workflow, "API_DOMAIN: ${'$'}{{ vars.API_DOMAIN }}")
+        assertContains(workflow, "FRONTEND_BASE_URL: ${'$'}{{ vars.FRONTEND_BASE_URL }}")
+        assertContains(workflow, "CORS_ALLOWED_ORIGINS: ${'$'}{{ vars.CORS_ALLOWED_ORIGINS }}")
+        assertContains(workflow, "'${'$'}{API_DOMAIN}' '${'$'}{FRONTEND_BASE_URL}' '${'$'}{CORS_ALLOWED_ORIGINS}'")
+        assertContains(workflow, "scripts/deploy.sh scripts/smoke-test.sh dynamic.yml.template")
+        assertContains(deploy, "API_DOMAIN")
+        assertContains(deploy, "dynamic.yml.template")
+        assertContains(envExample, "API_DOMAIN=\n")
+        assertContains(envExample, "FRONTEND_BASE_URL=\n")
+        assertContains(envExample, "CORS_ALLOWED_ORIGINS=\n")
+        assertFalse(envExample.contains("api.yeondang.com"))
+        assertFalse(envExample.contains("https://yeondang.com"))
+        assertFalse(listOf(workflow, deploy, envExample).any { it.contains("sslip.io") })
+        assertContains(deployTest, "CORS_ALLOWED_ORIGIN_PATTERNS=https://team-d-*.vercel.app")
     }
 
     @Test

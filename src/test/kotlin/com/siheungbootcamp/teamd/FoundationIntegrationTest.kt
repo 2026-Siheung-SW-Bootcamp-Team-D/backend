@@ -36,15 +36,15 @@ class FoundationIntegrationTest(
     }
 
     @Test
-    fun `Flyway V1은 ERD 전체 13개 테이블과 이력 한 행을 만든다`() {
+    fun `Flyway는 현재 ERD 전체 테이블과 네 개의 적용 이력을 만든다`() {
         val tables = jdbcClient.sql(
             "select count(*) from information_schema.tables where table_schema='public' and table_name <> 'flyway_schema_history'",
         ).query(Int::class.java).single()
         val migrations = jdbcClient.sql("select count(*) from flyway_schema_history where success=true")
             .query(Int::class.java).single()
 
-        assertEquals(13, tables)
-        assertEquals(1, migrations)
+        assertEquals(14, tables)
+        assertEquals(4, migrations)  // V1, V2, V3, V4
     }
 
     @Test
@@ -56,6 +56,26 @@ class FoundationIntegrationTest(
         assertEquals(2, definitions.size)
         assertTrue(definitions.any { it.contains("WHERE (status = 'OPEN'::text)") })
         assertTrue(definitions.any { it.contains("QUEUED") && it.contains("RUNNING") && it.contains("RETRY_WAIT") })
+    }
+
+    @Test
+    fun `후속 migration은 공동 후보 컬럼을 보존하고 보드 날짜 컬럼을 제거한다`() {
+        assertEquals(4, jdbcClient.sql(  // V1, V2, V3, V4
+            "select count(*) from flyway_schema_history where success=true"
+        ).query(Int::class.java).single())
+        assertEquals(3, jdbcClient.sql(
+            """
+            select count(*) from information_schema.columns
+            where table_name='board'
+              and column_name in ('selected_place_id','selected_by_participant_id','selected_at')
+            """.trimIndent()
+        ).query(Int::class.java).single())
+        assertEquals(1, jdbcClient.sql(
+            "select count(*) from information_schema.tables where table_name='place_like'"
+        ).query(Int::class.java).single())
+        assertEquals(0, jdbcClient.sql(
+            "select count(*) from information_schema.columns where table_name='board' and column_name in ('date_start','date_end')"
+        ).query(Int::class.java).single())
     }
 
     companion object {
