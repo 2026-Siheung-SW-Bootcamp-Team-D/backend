@@ -84,4 +84,10 @@ if grep -q 'not-a-real-secret' "${DOCKER_CALLS}"; then
   exit 1
 fi
 
+if "${ROOT_DIR}/scripts/deploy.sh" missing-origin https://example.invalid registry/teamd api.yeondang.com https://yeondang.com https://yeondang.com; then
+  echo '필수 운영 origin이 없는 배포가 성공으로 끝났습니다.' >&2
+  exit 1
+fi
+grep -q '^APP_IMAGE=registry/teamd:good-sha$' "${TEAMD_DIR}/.env"
+
 echo 'deploy.sh 성공·자동 롤백 테스트 통과'

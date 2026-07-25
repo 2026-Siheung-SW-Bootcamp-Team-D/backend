@@ -28,6 +28,8 @@ validate_public_settings() {
   [[ "${FRONTEND_BASE_URL}" =~ ^https://[A-Za-z0-9.-]+$ ]] || { echo 'FRONTEND_BASE_URL은 https URL이어야 합니다.' >&2; exit 1; }
   [[ "${CORS_ALLOWED_ORIGINS}" != *'*'* ]] || { echo 'CORS_ALLOWED_ORIGINS에 와일드카드를 사용할 수 없습니다.' >&2; exit 1; }
   [[ "${CORS_ALLOWED_ORIGINS}" != *$'\n'* && "${CORS_ALLOWED_ORIGINS}" != *$'\r'* ]] || { echo 'CORS_ALLOWED_ORIGINS에 줄바꿈을 사용할 수 없습니다.' >&2; exit 1; }
+  [[ ",${CORS_ALLOWED_ORIGINS}," == *",https://yeondang.com,"* ]] || { echo 'CORS_ALLOWED_ORIGINS에 https://yeondang.com이 필요합니다.' >&2; exit 1; }
+  [[ ",${CORS_ALLOWED_ORIGINS}," == *",https://www.yeondang.com,"* ]] || { echo 'CORS_ALLOWED_ORIGINS에 https://www.yeondang.com이 필요합니다.' >&2; exit 1; }
 }
 
 replace_deploy_settings() {
