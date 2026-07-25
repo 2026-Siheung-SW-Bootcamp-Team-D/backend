@@ -20,7 +20,10 @@ import org.springframework.test.context.TestPropertySource
 @WebMvcTest(ProtectedTestController::class)
 @AutoConfigureMockMvc
 @Import(SecurityConfig::class, ParticipantAuthFilter::class, RequestIdFilter::class, WebConfig::class)
-@TestPropertySource(properties = ["app.cors.allowed-origin-patterns=https://team-d-*.vercel.app"])
+@TestPropertySource(properties = [
+    "app.cors.allowed-origins=http://localhost:5173",
+    "app.cors.allowed-origin-patterns=https://team-d-*.vercel.app",
+])
 class SecurityContractTest(@Autowired private val mockMvc: MockMvc) {
     @MockitoBean
     private lateinit var participantAuthenticator: ParticipantAuthenticator
