@@ -15,12 +15,10 @@ request() {
 health_status="$(request "${TEMP_DIR}/health.json" "${BASE_URL}/actuator/health")"
 [[ "${health_status}" == "200" ]] || { echo "health smoke 실패: HTTP ${health_status}" >&2; exit 1; }
 
-start_date="$(TZ=Asia/Seoul date -d '+1 day' +%F 2>/dev/null || TZ=Asia/Seoul date -v+1d +%F)"
-end_date="$(TZ=Asia/Seoul date -d '+8 days' +%F 2>/dev/null || TZ=Asia/Seoul date -v+8d +%F)"
 create_status="$(request "${TEMP_DIR}/create.json" \
   --request POST \
   --header 'Content-Type: application/json' \
-  --data "{\"name\":\"배포 스모크 보드\",\"dateRange\":{\"start\":\"${start_date}\",\"end\":\"${end_date}\"},\"purpose\":\"배포 검증\",\"hostNickname\":\"스모크\"}" \
+  --data '{"name":"배포 스모크 보드","purpose":"배포 검증","creatorNickname":"스모크"}' \
   "${BASE_URL}/api/v1/boards")"
 [[ "${create_status}" == "201" ]] || { echo "보드 생성 smoke 실패: HTTP ${create_status}" >&2; exit 1; }
 
@@ -31,7 +29,7 @@ import sys
 with open(sys.argv[1], encoding="utf-8") as response:
     body = json.load(response)
 print(body["board"]["boardId"])
-print(body["participant"]["participantToken"])
+print(body["participantToken"])
 PY
 )
 board_id="${created[0]}"
