@@ -84,19 +84,25 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          gcloud compute ssh "${VM_NAME}" \
+            --project "${PROJECT_ID}" \
+            --zone "${VM_ZONE}" \
+            --tunnel-through-iap \
+            --quiet \
+            --command 'mkdir -p "$HOME/teamd-deploy" && chmod 700 "$HOME/teamd-deploy"'
           gcloud compute scp \
             --project "${PROJECT_ID}" \
             --zone "${VM_ZONE}" \
             --tunnel-through-iap \
             --quiet \
             scripts/deploy.sh scripts/smoke-test.sh dynamic.yml.template \
-            "${VM_NAME}:/tmp/"
+            "${VM_NAME}:~/teamd-deploy/"
           gcloud compute ssh "${VM_NAME}" \
             --project "${PROJECT_ID}" \
             --zone "${VM_ZONE}" \
             --tunnel-through-iap \
             --quiet \
-            --command 'sudo install -o root -g root -m 0755 /tmp/deploy.sh /opt/teamd/deploy.sh && sudo install -o root -g root -m 0755 /tmp/smoke-test.sh /opt/teamd/smoke-test.sh && sudo install -o root -g root -m 0644 /tmp/dynamic.yml.template /opt/teamd/dynamic.yml.template'
+            --command 'sudo install -o root -g root -m 0755 "$HOME/teamd-deploy/deploy.sh" /opt/teamd/deploy.sh && sudo install -o root -g root -m 0755 "$HOME/teamd-deploy/smoke-test.sh" /opt/teamd/smoke-test.sh && sudo install -o root -g root -m 0644 "$HOME/teamd-deploy/dynamic.yml.template" /opt/teamd/dynamic.yml.template'
 
       - name: VM 배포·health·smoke
         shell: bash
