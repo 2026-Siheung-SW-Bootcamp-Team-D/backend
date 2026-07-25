@@ -88,4 +88,5 @@ FE는 아래 시점부터 해당 화면을 실제 서버에 붙일 수 있다. *
 
 ### 통보 이력
 
+- **2026-07-25**: 생성 요청은 `name`, 선택 `purpose`, `creatorNickname`으로 고정했다. `dateRange`와 `hostNickname`은 제거했다. 생성 응답은 `board`, `creatorParticipant`, `invitation`, 최상위 `participantToken`을 반환한다. 초대 링크는 `/#/join/{inviteCode}` 형식이며, 참여자 모델은 `role`, `avatarColor`, `origin.registered`를 사용한다. `origin` 생략은 유지, 명시적 `null`은 삭제다.
 - **2026-07-23**: `GET /boards/{boardId}/course-draft` 응답의 각 stop에 `placeDeleted`(boolean) 필드 추가. 코드 리뷰(PR #11)에서 지적된 "삭제된 장소를 참조한 초안 스톱을 GET에서 그대로 노출하지만 표시 구분이 없다"는 문제의 해결책. 필드 추가이므로 사전 합의 없이 통보만 하며, API명세서_v1.1.md 10.1절과 위 4-6항에 반영했다.

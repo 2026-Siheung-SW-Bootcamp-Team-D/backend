@@ -59,8 +59,6 @@ class AreaConcurrencyTest(
         // 1-0. 보드 생성 (외래 키 제약 때문에 필수)
         val board = Board(
             name = "Concurrency Test Board",
-            dateStart = LocalDate.of(2099, 1, 1),
-            dateEnd = LocalDate.of(2099, 1, 2),
             purpose = "test",
             inviteCode = "test-invite-${Random.nextInt(100000)}",
             inviteExpiresAt = Instant.now().plusSeconds(86400),
@@ -143,8 +141,6 @@ class AreaConcurrencyTest(
         // 1-0. 보드 생성 (외래 키 제약 때문에 필수)
         val board = Board(
             name = "Retry Test Board",
-            dateStart = LocalDate.of(2099, 1, 1),
-            dateEnd = LocalDate.of(2099, 1, 2),
             purpose = "test",
             inviteCode = "retry-invite-${Random.nextInt(100000)}",
             inviteExpiresAt = Instant.now().plusSeconds(86400),

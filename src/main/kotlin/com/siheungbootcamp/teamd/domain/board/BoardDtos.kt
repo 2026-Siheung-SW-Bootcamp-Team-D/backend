@@ -1,17 +1,15 @@
 package com.siheungbootcamp.teamd.domain.board
 
+import com.fasterxml.jackson.annotation.JsonIgnore
 import com.fasterxml.jackson.annotation.JsonInclude
+import com.fasterxml.jackson.annotation.JsonSetter
 import jakarta.validation.Valid
 import jakarta.validation.constraints.*
 import java.time.Instant
-import java.time.LocalDate
-
-data class DateRangeRequest(@field:NotNull val start: LocalDate, @field:NotNull val end: LocalDate)
 data class CreateBoardRequest(
     @field:Size(min = 2, max = 40) val name: String,
-    @field:Valid val dateRange: DateRangeRequest,
     @field:Size(max = 100) val purpose: String?,
-    @field:Size(min = 1, max = 20) val hostNickname: String,
+    @field:Size(min = 1, max = 20) val creatorNickname: String,
 )
 data class PatchBoardRequest(
     @field:Size(min = 2, max = 40) val name: String? = null,
@@ -25,19 +23,35 @@ data class OriginRequest(
     val source: OriginSource,
     @field:Size(max = 100) val providerPlaceId: String? = null,
 )
-data class PatchMeRequest(@field:Size(min = 1, max = 20) val nickname: String? = null, @field:Valid val origin: OriginRequest? = null)
+class PatchMeRequest(
+    @field:Size(min = 1, max = 20) val nickname: String? = null,
+) {
+    @field:Valid
+    var origin: OriginRequest? = null
+        @JsonSetter("origin") set(value) {
+            field = value
+            originProvided = true
+        }
+
+    @get:JsonIgnore
+    var originProvided: Boolean = false
+        private set
+}
 data class SelectPlaceRequest(@field:NotBlank val placeId: String)
 
-data class DateRangeResponse(val start: LocalDate, val end: LocalDate)
-data class BoardSummary(val boardId: String, val name: String, val status: BoardStatus, val timezone: String = "Asia/Seoul", val dateRange: DateRangeResponse)
-data class CreatedParticipant(val participantId: String, val nickname: String, val role: String, val participantToken: String)
+data class BoardSummary(val boardId: String, val name: String, val purpose: String?, val status: BoardStatus, val timezone: String = "Asia/Seoul")
+data class CreatedParticipant(val participantId: String, val nickname: String, val role: String, val avatarColor: String)
 data class InvitationResponse(val inviteCode: String, val inviteUrl: String, val expiresAt: Instant)
-data class CreateBoardResponse(val board: BoardSummary, val participant: CreatedParticipant, val invitation: InvitationResponse)
+data class CreateBoardResponse(
+    val board: BoardSummary,
+    val creatorParticipant: CreatedParticipant,
+    val invitation: InvitationResponse,
+    val participantToken: String,
+)
 data class BoardCounts(val participants: Long, val places: Long, val comments: Long)
 data class BoardResponse(
     val boardId: String,
     val name: String,
-    val dateRange: DateRangeResponse,
     val purpose: String?,
     val status: BoardStatus,
     val timezone: String = "Asia/Seoul",

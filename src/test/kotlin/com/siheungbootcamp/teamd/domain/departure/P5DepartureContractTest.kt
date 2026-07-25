@@ -345,12 +345,12 @@ class P5DepartureContractTest(
     private fun createBoard(n: String, nick: String): CB {
         val r = mockMvc.post("/api/v1/boards") {
             contentType = MediaType.APPLICATION_JSON
-            content = """{"name":"$n","dateRange":{"start":"2099-01-01","end":"2099-01-02"},"purpose":"test","hostNickname":"$nick"}"""
+            content = """{"name":"$n","purpose":"test","creatorNickname":"$nick"}"""
         }.andExpect { status { isCreated() } }.andReturn().response
         val j = objectMapper.readTree(r.contentAsString)
         return CB(
             j.path("board").path("boardId").asText(),
-            j.path("participant").path("participantToken").asText(),
+            j.path("participantToken").asText(),
             j.path("invitation").path("inviteCode").asText()
         )
     }

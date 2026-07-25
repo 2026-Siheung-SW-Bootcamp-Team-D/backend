@@ -52,18 +52,14 @@ class P6CandidateBoardContractTest(
         }
     }
 
-    private fun createBoard(name: String, hostNickname: String): TestBoardContext {
+    private fun createBoard(name: String, creatorNickname: String): TestBoardContext {
         val createResult = mockMvc.post("/api/v1/boards") {
             contentType = MediaType.APPLICATION_JSON
             content = """
             {
               "name": "$name",
-              "dateRange": {
-                "start": "2026-08-01",
-                "end": "2026-08-31"
-              },
               "purpose": "테스트",
-              "hostNickname": "$hostNickname"
+              "creatorNickname": "$creatorNickname"
             }
             """.trimIndent()
         }.andExpect { status { isCreated() } }
@@ -71,8 +67,8 @@ class P6CandidateBoardContractTest(
 
         val response = objectMapper.readTree(createResult)
         val boardId = response.path("board").path("boardId").asText()
-        val participantId = response.path("participant").path("participantId").asText()
-        val token = response.path("participant").path("participantToken").asText()
+        val participantId = response.path("creatorParticipant").path("participantId").asText()
+        val token = response.path("participantToken").asText()
         val inviteCode = response.path("invitation").path("inviteCode").asText()
 
         return TestBoardContext(boardId, participantId, token, inviteCode)

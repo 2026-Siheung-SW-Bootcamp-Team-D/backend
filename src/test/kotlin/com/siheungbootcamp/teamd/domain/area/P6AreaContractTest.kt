@@ -70,11 +70,11 @@ class P6AreaContractTest(
     private fun createBoard(name: String, hostNickname: String): BoardTokenPair {
         val res = mockMvc.post("/api/v1/boards") {
             contentType = MediaType.APPLICATION_JSON
-            content = """{"name":"$name","dateRange":{"start":"2099-01-01","end":"2099-01-02"},"purpose":"test","hostNickname":"$hostNickname"}"""
+            content = """{"name":"$name","purpose":"test","creatorNickname":"$hostNickname"}"""
         }.andReturn().response
         val boardData = objectMapper.readTree(res.contentAsString)
         val boardId = boardData.path("board").path("boardId").asText()
-        val token = boardData.path("participant").path("participantToken").asText()
+        val token = boardData.path("participantToken").asText()
         return BoardTokenPair(boardId, token)
     }
 

@@ -540,10 +540,10 @@ class PlaceContractTest(
     private fun createBoard(name: String, nickname: String): CreatedBoard {
         val body = mockMvc.post("/api/v1/boards") {
             contentType = MediaType.APPLICATION_JSON
-            content = """{"name":"$name","dateRange":{"start":"2099-01-01","end":"2099-01-02"},"purpose":"테스트","hostNickname":"$nickname"}"""
+            content = """{"name":"$name","purpose":"테스트","creatorNickname":"$nickname"}"""
         }.andExpect { status { isCreated() } }.andReturn().response.contentAsString
         val json = objectMapper.readTree(body)
-        return CreatedBoard(json["board"]["boardId"].asText(), json["participant"]["participantToken"].asText(), json["invitation"]["inviteCode"].asText())
+        return CreatedBoard(json["board"]["boardId"].asText(), json["participantToken"].asText(), json["invitation"]["inviteCode"].asText())
     }
 
     private fun join(inviteCode: String, nickname: String): String {

@@ -27,6 +27,13 @@ class Participant(
     fun changeOrigin(label: String, ciphertext: ByteArray, source: OriginSource, providerPlaceId: String?) {
         originLabel = label; originCiphertext = ciphertext; originSource = source; originProviderPlaceId = providerPlaceId
     }
+
+    fun clearOrigin() {
+        originLabel = null
+        originCiphertext = null
+        originSource = null
+        originProviderPlaceId = null
+    }
 }
 
 enum class OriginSource { KAKAO_KEYWORD, KAKAO_ADDRESS, MANUAL_PIN }

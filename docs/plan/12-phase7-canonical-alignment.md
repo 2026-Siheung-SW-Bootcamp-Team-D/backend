@@ -11,7 +11,9 @@
 ## Global Constraints
 
 - 진실의 원본은 `../../../docs/specs/기능명세서_v1.3.md`, `API명세서_v1.1.md`, `ERD_v1.0.md`, `시스템아키텍처_v1.0.md`, `화면연동명세서_v1.0.md`다.
-- 완료된 P0~P6 커밋과 V1·V2 migration을 수정하거나 되돌리지 않는다. DB 변경은 V3 migration으로만 수행한다.
+- 완료된 P0~P6 커밋과 V1·V2 migration을 수정하거나 되돌리지 않는다. DB 변경은 새 Flyway migration으로만 수행한다.
+
+> 2026-07-25 후속 계약 보정: 보드 생성에서 `dateRange`와 `hostNickname`을 제거하고 `creatorNickname`으로 통일했다. V4 migration은 더 이상 제품 계약에 쓰이지 않는 `board.date_start`, `board.date_end`를 제거한다. `PATCH participants/me`는 origin 생략·명시적 null·객체를 구분한다.
 - 신규 FE 계약은 정식 투표·코스·출발 안내를 노출하지 않는다. 좋아요와 현재 선택 장소만 사용한다.
 - 개설자 역할은 이력 메타데이터일 뿐 신규 MVP 권한 판단에 사용하지 않는다.
 - 모든 활성 참여자는 후보 추가·보관, 좋아요, 현재 선택, 지역 찾기, 초대 정보 조회가 가능하다.
