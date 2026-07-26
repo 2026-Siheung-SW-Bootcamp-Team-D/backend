@@ -196,15 +196,19 @@ class AreaService(
             .groupBy { it.durationMin }
             .mapNotNull { (_, jobs) ->
                 jobs.firstNotNullOfOrNull { job ->
-                    parseSucceededResult(job)?.let { result ->
-                        AreaSearchMapResult(
-                            jobId = job.publicId,
-                            durationMin = job.durationMin,
-                            finishedAt = job.finishedAt,
-                            participantCenter = result.participantCenter,
-                            commonArea = result.commonArea,
-                        )
-                    }
+                    parseSucceededResult(job)
+                        ?.takeIf { result ->
+                            result.participantCenter != null && result.commonArea?.isNull == false
+                        }
+                        ?.let { result ->
+                            AreaSearchMapResult(
+                                jobId = job.publicId,
+                                durationMin = job.durationMin,
+                                finishedAt = job.finishedAt,
+                                participantCenter = result.participantCenter,
+                                commonArea = result.commonArea,
+                            )
+                        }
                 }
             }
             .sortedBy { it.durationMin }

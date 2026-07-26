@@ -197,6 +197,58 @@ class P6AreaContractTest(
     }
 
     @Test
+    fun `보드 지도는 같은 시간의 최신 레거시 결과를 건너뛴다`() {
+        val host = createBoard("레거시 지도 결과 제외", "호스트")
+        val member = inviteAndJoin(host, "참여자")
+        setOrigin(host, "호스트출발", 126.97, 37.55)
+        setOrigin(member, "참여자출발", 126.96, 37.54)
+        kakaoStubServer.setKeywordResponseMode(KakaoStubServer.ResponseMode.SUCCESS)
+        odsayStubServer.responseMode = OdsayStubServer.ResponseMode.SUCCESS
+
+        val createResponse = mockMvc.post("/api/v1/boards/${host.boardId}/area-search-jobs") {
+            bearer(host.token)
+            contentType = MediaType.APPLICATION_JSON
+            content = """{"durationMin":30}"""
+        }.andExpect { status { isAccepted() } }
+            .andReturn().response
+        val validJobId = objectMapper.readTree(createResponse.contentAsString).path("job").path("jobId").asText()
+        for (i in 0 until 100) { if (!areaJobExecutor.processOne()) break }
+
+        jdbcClient.sql(
+            """
+            insert into area_search_job (
+                public_id, board_id, duration_min, snapshot, status, result,
+                retry_count, finished_at, created_at, updated_at
+            ) values (
+                :publicId,
+                (select id from board where public_id = :boardId),
+                30,
+                '{}'::jsonb,
+                'SUCCEEDED',
+                '{"candidates":[]}'::jsonb,
+                0,
+                now() + interval '1 second',
+                now() + interval '1 second',
+                now() + interval '1 second'
+            )
+            """.trimIndent(),
+        ).param("publicId", "area_legacy_${System.nanoTime()}")
+            .param("boardId", host.boardId)
+            .update()
+
+        val response = mockMvc.get("/api/v1/boards/${host.boardId}/area-search-results") {
+            bearer(member.token)
+        }.andExpect { status { isOk() } }
+            .andReturn().response
+        val results = objectMapper.readTree(response.contentAsString).path("results")
+
+        assertEquals(1, results.size())
+        assertEquals(validJobId, results[0].path("jobId").asText())
+        assertEquals(true, results[0].hasNonNull("participantCenter"))
+        assertEquals(true, results[0].hasNonNull("commonArea"))
+    }
+
+    @Test
     fun `출발지 누락시 동기 422 ORIGIN_REQUIRED`() {
         val host = createBoard("출발지 없음 테스트", "호스트")
         val member = inviteAndJoin(host, "참여자")
