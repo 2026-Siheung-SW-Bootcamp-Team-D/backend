@@ -28,6 +28,22 @@ data class GetAreaSearchJobResponse(
     val result: AreaSearchResult?,
 )
 
+/**
+ * 보드 메인 지도에서 시간별 공통 도달 영역을 다시 그릴 때 쓰는 축약 응답이다.
+ * 개별 도달권과 기준점은 출발지 추론·불필요한 화면 결합을 막기 위해 포함하지 않는다.
+ */
+data class AreaSearchMapResultsResponse(
+    val results: List<AreaSearchMapResult>,
+)
+
+data class AreaSearchMapResult(
+    val jobId: String,
+    val durationMin: Int,
+    val finishedAt: Instant?,
+    val participantCenter: ParticipantCenterDto?,
+    val commonArea: JsonNode?,
+)
+
 data class AreaJobResponse(
     val jobId: String,
     val status: String,

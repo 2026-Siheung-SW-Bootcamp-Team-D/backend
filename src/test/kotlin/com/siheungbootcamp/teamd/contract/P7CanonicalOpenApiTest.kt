@@ -64,13 +64,14 @@ class P7CanonicalOpenApiTest(
             "/api/v1/boards/{boardId}/selected-place" to setOf("put", "delete"),
             "/api/v1/boards/{boardId}/area-search-jobs" to setOf("post"),
             "/api/v1/boards/{boardId}/area-search-jobs/{jobId}" to setOf("get"),
+            "/api/v1/boards/{boardId}/area-search-results" to setOf("get"),
         )
         expectedOperations.forEach { (path, methods) ->
             methods.forEach { method ->
                 assertTrue(paths.path(path).has(method), "$method $path 경로 필수")
             }
         }
-        assertEquals(26, expectedOperations.values.sumOf { it.size }, "canonical API는 26개 연산이어야 함")
+        assertEquals(27, expectedOperations.values.sumOf { it.size }, "canonical API는 27개 연산이어야 함")
 
         // Task 2: Legacy place search paths must not exist
         assertFalse(api.contains("/place-candidates"), "레거시 장소 후보 경로 제거됨")
