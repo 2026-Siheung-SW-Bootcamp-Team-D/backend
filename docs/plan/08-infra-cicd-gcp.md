@@ -28,15 +28,15 @@ I2(자동 CI/CD)를 서두르지 말고, I1에서 **손으로 한 번 배포하�
 
 ### T-I0-3. 프로필·비밀 주입 경로
 - `application-prod.yml`은 **값이 아니라 환경변수 참조만** (`${DB_PASSWORD}` 형태)
-- 비밀 목록: `DB_PASSWORD`, `TOKEN_PEPPER`, `ORIGIN_ENC_KEY`, `KAKAO_REST_KEY`, `TMAP_APP_KEY`, 그리고 Secret Manager의 `ODSAY_KEY`
-- 애플리케이션 런타임 변수는 `ODSAY_API_KEY`다. VM 동기화는 Secret Manager의 `ODSAY_KEY` 값을 `ODSAY_API_KEY`로 기록한다.
+- 비밀 목록: `DB_PASSWORD`, `TOKEN_PEPPER`, `ORIGIN_ENC_KEY`, `KAKAO_REST_KEY`, `ODSAY_API_KEY`, `TMAP_APP_KEY`
+- Secret Manager 이름과 애플리케이션 런타임 변수 이름은 동일하게 유지한다.
 
 **주입 경로 (환경별로 값의 출처만 다르고 앱은 환경변수만 읽는다)**
 
 | 환경 | 출처 | 전달 방식 |
 |---|---|---|
 | Local | 저장소 루트 `.env` (git 무시). `.env.example`에는 변수 이름만 | compose `env_file` |
-| Production | **GCP Secret Manager** | VM 시작 스크립트가 서비스 계정 권한으로 값을 읽어 `0600` 권한 env 파일 생성 → compose `env_file` |
+| Production | **GCP Secret Manager** | 배포 스크립트가 VM 서비스 계정 권한으로 최신 값을 검증한 뒤 `0600` env 파일을 원자 교체 → compose `env_file` |
 
 - 앱 코드에 환경별 분기를 만들지 않는다
 - **서비스 계정 JSON 키 파일을 저장소·VM에 두지 않는다** (VM 기본 서비스 계정 권한 사용)
@@ -97,11 +97,12 @@ on: push to main
   1. ./gradlew build
   2. docker build
   3. Artifact Registry push  — 태그: {commit-sha} + latest
-  4. VM에서 이미지 pull & 재기동
-  5. Flyway migration (앱 기동 시 적용)
-  6. /actuator/health 성공 대기
-  7. smoke test 실행
-  8. 실패 시 직전 이미지 태그로 롤백
+  4. VM에서 Secret Manager 최신 버전을 검증·동기화
+  5. VM에서 이미지 pull & 재기동
+  6. Flyway migration (앱 기동 시 적용)
+  7. /actuator/health 성공 대기
+  8. 인증된 Kakao 주소·장소 검색을 포함한 smoke test 실행
+  9. 실패 시 직전 env와 이미지 태그로 롤백
 ```
 
 - **인증: GitHub Actions Workload Identity Federation** (서비스 계정 JSON 키 다운로드 금지)
@@ -116,7 +117,7 @@ on: push to main
 | WIF 신뢰 조건 | 이 저장소의 특정 브랜치(`main`)에서 온 토큰만 CI 계정을 가장(impersonate)하도록 attribute 조건 지정 |
 | CI 계정 권한 | Artifact Registry Writer(push), VM에 명령을 내리기 위한 최소 권한. Secret Accessor·Owner 미부여 |
 | AR push | `gcloud auth configure-docker {region}-docker.pkg.dev` 후 `docker push {region}-docker.pkg.dev/{project}/{repo}/teamd:{sha}` |
-| VM 원격 실행 | `gcloud compute ssh {vm} --tunnel-through-iap --command "cd /opt/teamd && ./deploy.sh {sha}"`. `deploy.sh`가 pull → compose up → health 대기 → smoke → 실패 시 롤백 수행 |
+| VM 원격 실행 | `gcloud compute ssh {vm} --tunnel-through-iap --command "cd /opt/teamd && ./deploy.sh ... {project-id}"`. `deploy.sh`가 Secret Manager 동기화 → pull → compose up → health 대기 → smoke → 실패 시 env·이미지 롤백 수행 |
 | 직전 SHA 확인 | VM의 `/opt/teamd/current_sha`(또는 compose `.env`의 이미지 태그)에서 읽어 `previous_sha`로 보관. 롤백은 그 태그로 재기동 |
 | SSH 방식 | 공개 22 포트 대신 **IAP 터널** 사용 (아키텍처 7절 방화벽 규칙과 일치) |
 
@@ -125,8 +126,10 @@ on: push to main
 1. `GET /actuator/health` → 200
 2. `POST /boards` → 201 + 토큰 발급
 3. `GET /boards/{id}` (발급 토큰) → 200
-4. 잘못된 토큰 → 401
-5. (선택) 생성한 보드 종료
+4. 발급 토큰으로 Kakao 주소 검색 → 200
+5. 발급 토큰으로 Kakao 장소 검색 → 200
+6. 잘못된 토큰으로 보드 조회 → 401
+7. (선택) 생성한 보드 종료
 
 ### T-I2-4. Migration 안전 규칙 (문서화 + 리뷰 체크)
 > ⚠️ **DB migration은 애플리케이션 롤백만으로 되돌아가지 않는다.**

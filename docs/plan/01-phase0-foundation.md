@@ -39,7 +39,7 @@
 - `application-prod.yml` — **값이 아니라 환경변수 참조만** (`${DB_PASSWORD}` 형태)
 - `.env` (git 무시) + `.env.example` (**변수 이름만**, 실제 키 금지)
   - 변수: `DB_PASSWORD`, `TOKEN_PEPPER`, `ORIGIN_ENC_KEY`, `KAKAO_REST_KEY`, `ODSAY_API_KEY`, `TMAP_APP_KEY`
-  - 운영 VM 동기화는 Secret Manager의 `ODSAY_KEY` 값을 런타임 변수 `ODSAY_API_KEY`로 매핑
+  - 운영 VM은 배포마다 Secret Manager의 동일한 이름 6개를 `.env`에 원자적으로 동기화
   - `docker-compose.local.yml`의 `env_file`로 주입
 - `README.md`에 로컬 기동 절차 추가
 

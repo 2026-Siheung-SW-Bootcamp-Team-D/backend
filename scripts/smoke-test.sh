@@ -22,7 +22,7 @@ create_status="$(request "${TEMP_DIR}/create.json" \
   "${BASE_URL}/api/v1/boards")"
 [[ "${create_status}" == "201" ]] || { echo "보드 생성 smoke 실패: HTTP ${create_status}" >&2; exit 1; }
 
-readarray -t created < <(python3 - "${TEMP_DIR}/create.json" <<'PY'
+created="$(python3 - "${TEMP_DIR}/create.json" <<'PY'
 import json
 import sys
 
@@ -31,14 +31,24 @@ with open(sys.argv[1], encoding="utf-8") as response:
 print(body["board"]["boardId"])
 print(body["participantToken"])
 PY
-)
-board_id="${created[0]}"
-participant_token="${created[1]}"
+)"
+board_id="$(printf '%s\n' "${created}" | sed -n '1p')"
+participant_token="$(printf '%s\n' "${created}" | sed -n '2p')"
 
 get_status="$(request "${TEMP_DIR}/get.json" \
   --header "Authorization: Bearer ${participant_token}" \
   "${BASE_URL}/api/v1/boards/${board_id}")"
 [[ "${get_status}" == "200" ]] || { echo "보드 조회 smoke 실패: HTTP ${get_status}" >&2; exit 1; }
+
+address_search_status="$(request "${TEMP_DIR}/address-search.json" \
+  --header "Authorization: Bearer ${participant_token}" \
+  "${BASE_URL}/api/v1/boards/${board_id}/search/addresses?q=%EC%84%9C%EC%9A%B8")"
+[[ "${address_search_status}" == "200" ]] || { echo "Kakao 주소 검색 smoke 실패: HTTP ${address_search_status}" >&2; exit 1; }
+
+place_search_status="$(request "${TEMP_DIR}/place-search.json" \
+  --header "Authorization: Bearer ${participant_token}" \
+  "${BASE_URL}/api/v1/boards/${board_id}/search/places?q=%EC%84%9C%EC%9A%B8&provider=KAKAO")"
+[[ "${place_search_status}" == "200" ]] || { echo "Kakao 장소 검색 smoke 실패: HTTP ${place_search_status}" >&2; exit 1; }
 
 invalid_status="$(request "${TEMP_DIR}/invalid.json" \
   --header 'Authorization: Bearer invalid-smoke-token' \

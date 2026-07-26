@@ -28,7 +28,9 @@ jobs:
         run: ./gradlew build
 
       - name: CI/CD 스크립트 테스트
-        run: bash scripts/tests/deploy-test.sh
+        run: |
+          bash scripts/tests/deploy-test.sh
+          bash scripts/tests/smoke-test-test.sh
 
       - name: 테스트 리포트 업로드
         if: always()

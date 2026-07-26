@@ -65,10 +65,11 @@ class CicdConfigurationTest {
         assertContains(workflow, "API_DOMAIN: ${'$'}{{ vars.API_DOMAIN }}")
         assertContains(workflow, "FRONTEND_BASE_URL: ${'$'}{{ vars.FRONTEND_BASE_URL }}")
         assertContains(workflow, "CORS_ALLOWED_ORIGINS: ${'$'}{{ vars.CORS_ALLOWED_ORIGINS }}")
-        assertContains(workflow, "'${'$'}{API_DOMAIN}' '${'$'}{FRONTEND_BASE_URL}' '${'$'}{CORS_ALLOWED_ORIGINS}'")
-        assertContains(workflow, "scripts/deploy.sh scripts/smoke-test.sh dynamic.yml.template")
+        assertContains(workflow, "'${'$'}{API_DOMAIN}' '${'$'}{FRONTEND_BASE_URL}' '${'$'}{CORS_ALLOWED_ORIGINS}' '${'$'}{PROJECT_ID}'")
+        assertContains(workflow, "scripts/deploy.sh scripts/smoke-test.sh scripts/sync-secrets.sh dynamic.yml.template")
         assertContains(workflow, "${'$'}{VM_NAME}:~/teamd-deploy/")
         assertContains(workflow, "${'$'}HOME/teamd-deploy/deploy.sh")
+        assertContains(workflow, "${'$'}HOME/teamd-deploy/sync-secrets.sh")
         assertFalse(workflow.contains("${'$'}{VM_NAME}:/tmp/"))
         assertContains(deploy, "API_DOMAIN")
         assertContains(deploy, "dynamic.yml.template")
@@ -82,7 +83,7 @@ class CicdConfigurationTest {
     }
 
     @Test
-    fun `smoke test는 생성 조회 잘못된 토큰 흐름을 검증한다`() {
+    fun `smoke test는 생성 조회 Kakao 검색 잘못된 토큰 흐름을 검증한다`() {
         val smoke = read("scripts/smoke-test.sh")
 
         assertContains(smoke, "/actuator/health")
@@ -91,6 +92,8 @@ class CicdConfigurationTest {
         assertContains(smoke, "creatorNickname")
         assertContains(smoke, "participantToken")
         assertContains(smoke, "Authorization: Bearer")
+        assertContains(smoke, "/search/addresses")
+        assertContains(smoke, "/search/places")
         assertContains(smoke, "401")
         assertFalse(smoke.contains("hostNickname"))
         assertFalse(smoke.contains("dateRange"))
