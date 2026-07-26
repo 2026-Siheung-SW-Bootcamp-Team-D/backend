@@ -44,7 +44,9 @@ jobs:
         run: ./gradlew bootJar
 
       - name: CI/CD 스크립트 테스트
-        run: bash scripts/tests/deploy-test.sh
+        run: |
+          bash scripts/tests/deploy-test.sh
+          bash scripts/tests/smoke-test-test.sh
 
       - name: WIF 인증
         uses: google-github-actions/auth@v2
@@ -84,6 +86,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          # shellcheck disable=SC2016
           gcloud compute ssh "${VM_NAME}" \
             --project "${PROJECT_ID}" \
             --zone "${VM_ZONE}" \
@@ -95,14 +98,15 @@ jobs:
             --zone "${VM_ZONE}" \
             --tunnel-through-iap \
             --quiet \
-            scripts/deploy.sh scripts/smoke-test.sh dynamic.yml.template \
+            scripts/deploy.sh scripts/smoke-test.sh scripts/sync-secrets.sh dynamic.yml.template \
             "${VM_NAME}:~/teamd-deploy/"
+          # shellcheck disable=SC2016
           gcloud compute ssh "${VM_NAME}" \
             --project "${PROJECT_ID}" \
             --zone "${VM_ZONE}" \
             --tunnel-through-iap \
             --quiet \
-            --command 'sudo install -o root -g root -m 0755 "$HOME/teamd-deploy/deploy.sh" /opt/teamd/deploy.sh && sudo install -o root -g root -m 0755 "$HOME/teamd-deploy/smoke-test.sh" /opt/teamd/smoke-test.sh && sudo install -o root -g root -m 0644 "$HOME/teamd-deploy/dynamic.yml.template" /opt/teamd/dynamic.yml.template'
+            --command 'sudo install -o root -g root -m 0755 "$HOME/teamd-deploy/deploy.sh" /opt/teamd/deploy.sh && sudo install -o root -g root -m 0755 "$HOME/teamd-deploy/smoke-test.sh" /opt/teamd/smoke-test.sh && sudo install -o root -g root -m 0755 "$HOME/teamd-deploy/sync-secrets.sh" /opt/teamd/sync-secrets.sh && sudo install -o root -g root -m 0644 "$HOME/teamd-deploy/dynamic.yml.template" /opt/teamd/dynamic.yml.template'
 
       - name: VM 배포·health·smoke
         shell: bash
@@ -113,7 +117,7 @@ jobs:
             --zone "${VM_ZONE}" \
             --tunnel-through-iap \
             --quiet \
-            --command "sudo /opt/teamd/deploy.sh '${{ github.sha }}' '${API_BASE_URL}' '${IMAGE_REPOSITORY}' '${API_DOMAIN}' '${FRONTEND_BASE_URL}' '${CORS_ALLOWED_ORIGINS}'"
+            --command "sudo /opt/teamd/deploy.sh '${{ github.sha }}' '${API_BASE_URL}' '${IMAGE_REPOSITORY}' '${API_DOMAIN}' '${FRONTEND_BASE_URL}' '${CORS_ALLOWED_ORIGINS}' '${PROJECT_ID}'"
 
       - name: 테스트 리포트 업로드
         if: always()

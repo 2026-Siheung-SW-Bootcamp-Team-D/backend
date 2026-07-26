@@ -2,15 +2,17 @@
 set -Eeuo pipefail
 set +x
 
-IMAGE_SHA="${1:?사용법: deploy.sh <commit-sha> <api-base-url> <image-repository> <api-domain> <frontend-base-url> <cors-allowed-origins>}"
-API_BASE_URL="${2:?사용법: deploy.sh <commit-sha> <api-base-url> <image-repository> <api-domain> <frontend-base-url> <cors-allowed-origins>}"
-IMAGE_REPOSITORY="${3:?사용법: deploy.sh <commit-sha> <api-base-url> <image-repository> <api-domain> <frontend-base-url> <cors-allowed-origins>}"
-API_DOMAIN="${4:?사용법: deploy.sh <commit-sha> <api-base-url> <image-repository> <api-domain> <frontend-base-url> <cors-allowed-origins>}"
-FRONTEND_BASE_URL="${5:?사용법: deploy.sh <commit-sha> <api-base-url> <image-repository> <api-domain> <frontend-base-url> <cors-allowed-origins>}"
-CORS_ALLOWED_ORIGINS="${6:?사용법: deploy.sh <commit-sha> <api-base-url> <image-repository> <api-domain> <frontend-base-url> <cors-allowed-origins>}"
+IMAGE_SHA="${1:?사용법: deploy.sh <commit-sha> <api-base-url> <image-repository> <api-domain> <frontend-base-url> <cors-allowed-origins> <project-id>}"
+API_BASE_URL="${2:?사용법: deploy.sh <commit-sha> <api-base-url> <image-repository> <api-domain> <frontend-base-url> <cors-allowed-origins> <project-id>}"
+IMAGE_REPOSITORY="${3:?사용법: deploy.sh <commit-sha> <api-base-url> <image-repository> <api-domain> <frontend-base-url> <cors-allowed-origins> <project-id>}"
+API_DOMAIN="${4:?사용법: deploy.sh <commit-sha> <api-base-url> <image-repository> <api-domain> <frontend-base-url> <cors-allowed-origins> <project-id>}"
+FRONTEND_BASE_URL="${5:?사용법: deploy.sh <commit-sha> <api-base-url> <image-repository> <api-domain> <frontend-base-url> <cors-allowed-origins> <project-id>}"
+CORS_ALLOWED_ORIGINS="${6:?사용법: deploy.sh <commit-sha> <api-base-url> <image-repository> <api-domain> <frontend-base-url> <cors-allowed-origins> <project-id>}"
+PROJECT_ID="${7:?사용법: deploy.sh <commit-sha> <api-base-url> <image-repository> <api-domain> <frontend-base-url> <cors-allowed-origins> <project-id>}"
 TEAMD_DIR="${TEAMD_DIR:-/opt/teamd}"
 COMPOSE_FILE="${COMPOSE_FILE:-${TEAMD_DIR}/docker-compose.prod.yml}"
 SMOKE_SCRIPT="${SMOKE_SCRIPT:-${TEAMD_DIR}/smoke-test.sh}"
+SYNC_SECRETS_SCRIPT="${SYNC_SECRETS_SCRIPT:-${TEAMD_DIR}/sync-secrets.sh}"
 DYNAMIC_TEMPLATE="${DYNAMIC_TEMPLATE:-${TEAMD_DIR}/dynamic.yml.template}"
 DYNAMIC_FILE="${DYNAMIC_FILE:-${TEAMD_DIR}/dynamic.yml}"
 CURRENT_SHA_FILE="${TEAMD_DIR}/current_sha"
@@ -94,6 +96,7 @@ trap rollback ERR
 validate_public_settings
 cp "${ENV_FILE}" "${ENV_BACKUP}"
 chmod 600 "${ENV_BACKUP}"
+"${SYNC_SECRETS_SCRIPT}" "${PROJECT_ID}" "${ENV_FILE}"
 replace_deploy_settings "${IMAGE_REPOSITORY}:${IMAGE_SHA}"
 render_dynamic_config
 
