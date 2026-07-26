@@ -55,6 +55,10 @@ class PlaceContractTest(
         val candidate = objectMapper.readTree(searchResult).path("items")[0]
         val searchJson = objectMapper.readTree(searchResult)
         assertEquals("KAKAO", searchJson.path("provider").asText())
+        assertFalse(
+            kakaoStubServer.lastKeywordRawQuery.orEmpty().contains("%25"),
+            "Kakao 검색어는 RestClient에서 이중 인코딩되면 안 된다",
+        )
         assertTrue(candidate.has("roadAddress"))
         assertTrue(candidate.has("jibunAddress"))
         assertFalse(candidate.has("roadAddressName"))

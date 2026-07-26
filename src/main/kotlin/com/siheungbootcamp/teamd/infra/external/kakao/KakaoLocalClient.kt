@@ -6,6 +6,7 @@ import com.siheungbootcamp.teamd.global.error.ErrorCode
 import com.siheungbootcamp.teamd.global.external.ExternalApiClient
 import org.springframework.beans.factory.annotation.Qualifier
 import org.springframework.stereotype.Component
+import java.net.URI
 
 /**
  * Kakao Local REST API의 검색, 주소, 좌표→주소 기능을 제공한다.
@@ -62,7 +63,7 @@ class KakaoLocalClient(
         }
 
         val url = "${properties.baseUrl}/v2/local/search/keyword.json?${params.joinToString("&")}"
-        val response = externalApiClient.get(url, authHeaders())
+        val response = externalApiClient.get(URI.create(url), authHeaders())
 
         return try {
             val root = mapper.readTree(response)
@@ -77,7 +78,7 @@ class KakaoLocalClient(
                     lon = doc.path("x").asDouble(),
                     lat = doc.path("y").asDouble(),
                     providerPlaceUrl = validateUrl(doc.path("place_url").asText()),
-                    distanceMeters = if (doc.has("distance")) doc.path("distance").asInt() else null,
+                    distanceMeters = doc.path("distance").asText().toIntOrNull(),
                 )
             }.take(size.coerceIn(1, 15)).toList()
         } catch (e: Exception) {
@@ -104,7 +105,7 @@ class KakaoLocalClient(
         )
 
         val url = "${properties.baseUrl}/v2/local/search/category.json?${params.joinToString("&")}"
-        val response = externalApiClient.get(url, authHeaders())
+        val response = externalApiClient.get(URI.create(url), authHeaders())
 
         return try {
             val root = mapper.readTree(response)
@@ -119,7 +120,7 @@ class KakaoLocalClient(
                     lon = doc.path("x").asDouble(),
                     lat = doc.path("y").asDouble(),
                     providerPlaceUrl = validateUrl(doc.path("place_url").asText()),
-                    distanceMeters = if (doc.has("distance")) doc.path("distance").asInt() else null,
+                    distanceMeters = doc.path("distance").asText().toIntOrNull(),
                 )
             }.take(size.coerceIn(1, 15)).toList()
         } catch (e: Exception) {
@@ -129,7 +130,7 @@ class KakaoLocalClient(
 
     fun searchAddress(query: String): List<AddressCandidate> {
         val url = "${properties.baseUrl}/v2/local/search/address.json?query=${urlEncode(query)}&size=5"
-        val response = externalApiClient.get(url, authHeaders())
+        val response = externalApiClient.get(URI.create(url), authHeaders())
 
         return try {
             val root = mapper.readTree(response)
@@ -149,7 +150,7 @@ class KakaoLocalClient(
 
     fun coord2Address(lon: Double, lat: Double): CoordinateAddress {
         val url = "${properties.baseUrl}/v2/local/geo/coord2address.json?x=$lon&y=$lat"
-        val response = externalApiClient.get(url, authHeaders())
+        val response = externalApiClient.get(URI.create(url), authHeaders())
 
         return try {
             val root = mapper.readTree(response)

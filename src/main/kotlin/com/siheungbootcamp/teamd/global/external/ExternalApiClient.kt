@@ -7,6 +7,7 @@ import org.springframework.http.MediaType
 import org.springframework.http.ResponseEntity
 import org.springframework.web.client.RestClient
 import org.springframework.web.client.RestClientException
+import java.net.URI
 import java.time.Duration
 import java.time.Instant
 
@@ -31,6 +32,25 @@ class ExternalApiClient(
         executeWithRetry {
             restClient.get()
                 .uri(url)
+                .headers { httpHeaders ->
+                    headers.forEach { (key, value) -> httpHeaders.set(key, value) }
+                }
+                .accept(MediaType.APPLICATION_JSON)
+                .retrieve()
+                .onStatus({ true }) { _, _ -> }
+                .toEntity(String::class.java)
+        }
+
+    /**
+     * 호출자가 이미 인코딩한 URI를 그대로 전송한다.
+     *
+     * String URI는 RestClient가 다시 인코딩하므로, 사전 인코딩된 검색어가 있는
+     * 외부 API 요청은 이 overload를 사용해야 한다.
+     */
+    fun get(uri: URI, headers: Map<String, String> = emptyMap()): String =
+        executeWithRetry {
+            restClient.get()
+                .uri(uri)
                 .headers { httpHeaders ->
                     headers.forEach { (key, value) -> httpHeaders.set(key, value) }
                 }
