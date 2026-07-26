@@ -2,6 +2,7 @@
 set -Eeuo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+REAL_DOCKER="$(command -v docker)"
 TEST_DIR="$(mktemp -d)"
 trap 'rm -rf "${TEST_DIR}"' EXIT
 mkdir -p "${TEST_DIR}/bin" "${TEST_DIR}/teamd"
@@ -60,7 +61,7 @@ if [[ "${INVALID_SECRET:-}" == "${secret_name}" ]]; then
   exit 0
 fi
 case "${secret_name}" in
-  DB_PASSWORD) printf '%s' 'synced-db-password' ;;
+  DB_PASSWORD) printf '%s' "synced-\$cash-and-'quote" ;;
   TOKEN_PEPPER) printf '%s' 'synced-token-pepper' ;;
   ORIGIN_ENC_KEY) printf '%s' 'AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=' ;;
   KAKAO_REST_KEY) printf '%s' '0123456789abcdef0123456789abcdef' ;;
@@ -104,17 +105,33 @@ grep -q '^API_DOMAIN=api.yeondang.com$' "${TEAMD_DIR}/.env"
 grep -q '^FRONTEND_BASE_URL=https://yeondang.com$' "${TEAMD_DIR}/.env"
 grep -q '^CORS_ALLOWED_ORIGINS=https://yeondang.com,https://www.yeondang.com$' "${TEAMD_DIR}/.env"
 grep -q '^CORS_ALLOWED_ORIGIN_PATTERNS=https://team-d-\*.vercel.app$' "${TEAMD_DIR}/.env"
-grep -q '^DB_PASSWORD=synced-db-password$' "${TEAMD_DIR}/.env"
-grep -q '^TOKEN_PEPPER=synced-token-pepper$' "${TEAMD_DIR}/.env"
-grep -q '^ORIGIN_ENC_KEY=AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=$' "${TEAMD_DIR}/.env"
-grep -q '^KAKAO_REST_KEY=0123456789abcdef0123456789abcdef$' "${TEAMD_DIR}/.env"
-grep -q '^ODSAY_API_KEY=synced-odsay-key$' "${TEAMD_DIR}/.env"
-grep -q '^TMAP_APP_KEY=synced-tmap-key$' "${TEAMD_DIR}/.env"
+grep -Fqx "DB_PASSWORD='synced-\$cash-and-\\'quote'" "${TEAMD_DIR}/.env"
+grep -q "^TOKEN_PEPPER='synced-token-pepper'$" "${TEAMD_DIR}/.env"
+grep -q "^ORIGIN_ENC_KEY='AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8='$" "${TEAMD_DIR}/.env"
+grep -q "^KAKAO_REST_KEY='0123456789abcdef0123456789abcdef'$" "${TEAMD_DIR}/.env"
+grep -q "^ODSAY_API_KEY='synced-odsay-key'$" "${TEAMD_DIR}/.env"
+grep -q "^TMAP_APP_KEY='synced-tmap-key'$" "${TEAMD_DIR}/.env"
 test "$(wc -l < "${GCLOUD_CALLS}" | tr -d ' ')" = 6
 grep -q "Host(\`api.yeondang.com\`)" "${TEAMD_DIR}/dynamic.yml"
 test "$(file_mode "${TEAMD_DIR}/.env")" = 600
 grep -q '^good-sha$' "${TEAMD_DIR}/current_sha"
 grep -q '^old-sha$' "${TEAMD_DIR}/previous_sha"
+
+cat > "${TEST_DIR}/compose-secret-check.yml" <<'YAML'
+services:
+  app:
+    image: busybox
+    environment:
+      DB_PASSWORD: ${DB_PASSWORD}
+YAML
+decoded_password="$(
+  "${REAL_DOCKER}" compose \
+    --env-file "${TEAMD_DIR}/.env" \
+    -f "${TEST_DIR}/compose-secret-check.yml" \
+    config --environment |
+    sed -n 's/^DB_PASSWORD=//p'
+)"
+test "${decoded_password}" = "synced-\$cash-and-'quote"
 
 cp "${TEAMD_DIR}/.env" "${TEST_DIR}/expected-env"
 export INVALID_SECRET=KAKAO_REST_KEY

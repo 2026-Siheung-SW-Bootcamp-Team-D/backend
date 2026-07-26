@@ -1,5 +1,5 @@
 # 운영용 compose. Traefik이 80/443만 외부에 열고, 앱 컨테이너의 8080은 호스트에 노출하지 않는다.
-# 비밀은 VM 시작 스크립트가 Secret Manager에서 읽어 만든 0600 권한 .env 파일로 주입한다 (08-infra-cicd-gcp.md T-I0-3).
+# 비밀은 배포 스크립트가 Secret Manager에서 읽어 원자 교체한 0600 권한 .env 파일로 주입한다 (08-infra-cicd-gcp.md T-I0-3).
 # 라우팅은 Docker 라벨 자동탐색 대신 정적 파일(dynamic.yml)로 고정한다 — 서비스가 app 하나뿐이라 동적 탐색이 불필요하고,
 # Traefik의 Docker API 클라이언트가 최신 Docker Engine(minAPIVersion 1.40)과 협상에 실패하는 문제도 함께 피한다.
 services:

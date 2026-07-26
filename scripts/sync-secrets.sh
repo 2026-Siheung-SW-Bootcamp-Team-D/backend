@@ -51,18 +51,20 @@ replace_env_value() {
   local next_file
   local replaced=false
   local line
+  local serialized_value
+  serialized_value="$(printf '%s' "${value}" | sed "s/'/\\\\'/g")"
   next_file="$(mktemp "${source_file}.next.XXXXXX")"
   chmod 600 "${next_file}"
   while IFS= read -r line || [[ -n "${line}" ]]; do
     if [[ "${line}" == "${name}="* ]]; then
-      printf '%s=%s\n' "${name}" "${value}" >> "${next_file}"
+      printf "%s='%s'\n" "${name}" "${serialized_value}" >> "${next_file}"
       replaced=true
     else
       printf '%s\n' "${line}" >> "${next_file}"
     fi
   done < "${source_file}"
   if [[ "${replaced}" == false ]]; then
-    printf '%s=%s\n' "${name}" "${value}" >> "${next_file}"
+    printf "%s='%s'\n" "${name}" "${serialized_value}" >> "${next_file}"
   fi
   mv "${next_file}" "${source_file}"
   chmod 600 "${source_file}"
