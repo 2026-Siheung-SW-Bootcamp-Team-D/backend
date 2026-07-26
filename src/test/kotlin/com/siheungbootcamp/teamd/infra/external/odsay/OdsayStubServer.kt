@@ -48,14 +48,17 @@ class OdsayStubServer(port: Int = 0) : AutoCloseable {
                 val response = """
                 {
                   "result": {
-                    "feature": [
+                    "geojson": {
+                      "type": "FeatureCollection",
+                      "features": [
                       {
                         "geometry": {
                           "type": "Polygon",
                           "coordinates": [[[127.0, 37.3], [127.2, 37.3], [127.2, 37.5], [127.0, 37.5], [127.0, 37.3]]]
                         }
                       }
-                    ]
+                      ]
+                    }
                   }
                 }
                 """.trimIndent()
@@ -66,14 +69,17 @@ class OdsayStubServer(port: Int = 0) : AutoCloseable {
                 val response = """
                 {
                   "result": {
-                    "feature": [
+                    "geojson": {
+                      "type": "FeatureCollection",
+                      "features": [
                       {
                         "geometry": {
                           "type": "MultiPolygon",
                           "coordinates": [[[[127.0, 37.3], [127.1, 37.3], [127.1, 37.4], [127.0, 37.4], [127.0, 37.3]]], [[[127.15, 37.35], [127.25, 37.35], [127.25, 37.45], [127.15, 37.45], [127.15, 37.35]]]]
                         }
                       }
-                    ]
+                      ]
+                    }
                   }
                 }
                 """.trimIndent()
@@ -88,14 +94,17 @@ class OdsayStubServer(port: Int = 0) : AutoCloseable {
                     val response = """
                     {
                       "result": {
-                        "feature": [
+                        "geojson": {
+                          "type": "FeatureCollection",
+                          "features": [
                           {
                             "geometry": {
                               "type": "Polygon",
                               "coordinates": [[[127.0, 37.3], [127.2, 37.3], [127.2, 37.5], [127.0, 37.5], [127.0, 37.3]]]
                             }
                           }
-                        ]
+                          ]
+                        }
                       }
                     }
                     """.trimIndent()
@@ -106,7 +115,7 @@ class OdsayStubServer(port: Int = 0) : AutoCloseable {
                 sendResponse(exchange, 500, """{"error":"server_error"}""")
             }
             ResponseMode.MALFORMED -> {
-                // 응답 계약 위반: feature가 없거나 geometry가 잘못됨
+                // 응답 계약 위반: geojson.features가 없거나 geometry가 잘못됨
                 sendResponse(exchange, 200, """{"result": {}}""")
             }
             ResponseMode.NO_INTERSECTION -> {
@@ -121,14 +130,17 @@ class OdsayStubServer(port: Int = 0) : AutoCloseable {
                 val response = """
                 {
                   "result": {
-                    "feature": [
+                    "geojson": {
+                      "type": "FeatureCollection",
+                      "features": [
                       {
                         "geometry": {
                           "type": "Polygon",
                           "coordinates": $polygon
                         }
                       }
-                    ]
+                      ]
+                    }
                   }
                 }
                 """.trimIndent()
