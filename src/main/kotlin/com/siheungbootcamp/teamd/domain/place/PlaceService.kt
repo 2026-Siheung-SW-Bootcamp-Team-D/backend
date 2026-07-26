@@ -106,6 +106,7 @@ class PlaceService(
         lat: Double?,
         query: String?,
         category: String?,
+        theme: String?,
         radius: Int,
     ): PlaceCandidateResponse {
         checks.requireBoard(principal, boardId)
@@ -120,13 +121,9 @@ class PlaceService(
             throw BusinessException(ErrorCode.INVALID_ARGUMENT)
         }
 
-        // 검증: q와 category 동시 전달 불가
-        if (query != null && category != null) {
-            throw BusinessException(ErrorCode.INVALID_ARGUMENT)
-        }
-
-        // 검증: q와 category 모두 누락 불가
-        if (query.isNullOrBlank() && category.isNullOrBlank()) {
+        val suppliedSearchModes = listOf(query?.takeIf { it.isNotBlank() }, category?.takeIf { it.isNotBlank() }, theme?.takeIf { it.isNotBlank() })
+            .count { it != null }
+        if (suppliedSearchModes != 1) {
             throw BusinessException(ErrorCode.INVALID_ARGUMENT)
         }
 
@@ -136,6 +133,7 @@ class PlaceService(
         }
 
         val validCategories = setOf("RESTAURANT", "CAFE", "CULTURE", "TOUR", "ACCOMMODATION", "PLAY")
+        val validThemes = setOf("ACTIVITY")
         val trimmedQuery = query?.trim()
 
         // 검증: category 값
@@ -145,12 +143,18 @@ class PlaceService(
             }
         }
 
+        if (!theme.isNullOrBlank() && theme !in validThemes) {
+            throw BusinessException(ErrorCode.INVALID_ARGUMENT)
+        }
+
         // 검증: q 길이 (2자 이상)
         if (!trimmedQuery.isNullOrEmpty() && trimmedQuery.length !in 2..60) {
             throw BusinessException(ErrorCode.INVALID_ARGUMENT)
         }
 
-        val candidates = if (!category.isNullOrBlank()) {
+        val candidates = when {
+            theme == "ACTIVITY" -> searchActivityTheme(lon, lat, radius)
+            !category.isNullOrBlank() -> {
             val kakaoGroupCode = when (category) {
                 "RESTAURANT" -> "FD6"
                 "CAFE" -> "CE7"
@@ -166,8 +170,8 @@ class PlaceService(
             } else {
                 kakao.searchCategory(kakaoGroupCode, lon, lat, radius, 15)
             }
-        } else {
-            kakao.searchKeyword(trimmedQuery!!, lon, lat, radius, 15)
+            }
+            else -> kakao.searchKeyword(trimmedQuery!!, lon, lat, radius, 15)
         }
 
         return PlaceCandidateResponse(
@@ -186,6 +190,14 @@ class PlaceService(
             hint = if (candidates.isEmpty()) "결과가 없습니다." else null,
         )
     }
+
+    private fun searchActivityTheme(lon: Double, lat: Double, radius: Int): List<KakaoLocalClient.PlaceCandidate> =
+        ACTIVITY_KEYWORDS.asSequence()
+            .flatMap { keyword -> kakao.searchKeyword(keyword, lon, lat, radius, 15).asSequence() }
+            .sortedWith(compareBy<KakaoLocalClient.PlaceCandidate> { it.distanceMeters ?: Int.MAX_VALUE }.thenBy { it.providerPlaceId })
+            .distinctBy { it.providerPlaceId }
+            .take(15)
+            .toList()
 
     @Transactional
     fun create(boardId: String, principal: ParticipantPrincipal, request: CreatePlaceRequest): PlaceResponse {
@@ -435,6 +447,7 @@ class PlaceService(
     }
 
     companion object {
+        private val ACTIVITY_KEYWORDS = listOf("영화관", "볼링장", "방탈출", "전시", "공연", "오락실", "체험")
         private val VALID_CATEGORIES = setOf("RESTAURANT", "CAFE", "PLAY", "BAR", "CULTURE", "ATTRACTION", "TRANSIT", "ETC")
     }
 

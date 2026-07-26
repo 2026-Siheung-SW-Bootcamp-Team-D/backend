@@ -156,6 +156,27 @@ class P7NearbyPlaceContractTest(
     }
 
     @Test
+    fun `ACTIVITY 테마는 복수 키워드 결과를 중복 제거하고 거리순으로 반환한다`() {
+        val host = createBoard("액티비티 보드", "호스트")
+        val keywordRequestsBefore = kakaoStubServer.requestCount("keyword")
+
+        val result = mockMvc.get("/api/v1/boards/${host.boardId}/search/nearby-places") {
+            bearer(host.token)
+            param("lon", "127.0")
+            param("lat", "37.0")
+            param("theme", "ACTIVITY")
+            param("radius", "1000")
+        }.andExpect { status { isOk() } }
+            .andReturn().response.contentAsString
+
+        val items = objectMapper.readTree(result).path("items")
+        assertEquals(keywordRequestsBefore + 7, kakaoStubServer.requestCount("keyword"), "정의된 액티비티 키워드를 모두 조회해야 한다")
+        assertEquals(2, items.size(), "같은 Kakao 장소는 한 번만 반환해야 한다")
+        assertEquals("activity-near", items[0].path("providerPlaceId").asText(), "가까운 장소가 먼저여야 한다")
+        assertEquals("activity-shared", items[1].path("providerPlaceId").asText())
+    }
+
+    @Test
     fun `주변 검색만으로 place 테이블 행 수가 증가하지 않음`() {
         val host = createBoard("주변검색 미저장 보드", "호스트")
 
