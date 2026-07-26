@@ -10,8 +10,6 @@ import com.siheungbootcamp.teamd.global.auth.AuthorizationChecks
 import com.siheungbootcamp.teamd.global.auth.ParticipantPrincipal
 import com.siheungbootcamp.teamd.global.error.BusinessException
 import com.siheungbootcamp.teamd.global.error.ErrorCode
-import org.slf4j.LoggerFactory
-import org.springframework.dao.DataIntegrityViolationException
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import tools.jackson.databind.ObjectMapper
@@ -39,8 +37,6 @@ class CourseService(
     private val publicTokenGenerator: PublicTokenGenerator,
     private val objectMapper: ObjectMapper,
 ) {
-    private val logger = LoggerFactory.getLogger(javaClass)
-
     fun getDraft(boardId: String, principal: ParticipantPrincipal): CourseDraftResponse {
         checks.requireBoard(principal, boardId)
         val board = findBoard(boardId)
@@ -54,7 +50,7 @@ class CourseService(
     fun putDraft(boardId: String, principal: ParticipantPrincipal, ifMatch: String?, request: PutCourseDraftRequest): CourseDraftResponse {
         checks.requireBoard(principal, boardId)
         checks.requireHost(principal)
-        val board = findBoard(boardId)
+        val board = findBoardForUpdate(boardId)
         val boardIdInternal = requireNotNull(board.id)
 
         if (ifMatch.isNullOrBlank()) throw BusinessException(ErrorCode.INVALID_ARGUMENT)
@@ -75,19 +71,7 @@ class CourseService(
             existing.replace(newEntriesJson)
             existing
         } else {
-            try {
-                val created = drafts.save(CourseDraft(board = board, version = 1, stopsJson = newEntriesJson))
-                drafts.flush()
-                created
-            } catch (e: DataIntegrityViolationException) {
-                // 초안이 아직 없을 때는 잠글 행이 없어 두 요청이 동시에 첫 insert를 시도할 수 있다.
-                // course_draft.board_id unique 제약(V1__baseline.sql)에 걸린 쪽은 이미 다른 요청이
-                // draft-1을 만들었다는 뜻이므로 412로 변환한다. 원본 예외는 진단용으로 로그만 남긴다.
-                logger.debug("동시 초안 첫 insert 경합 감지: boardId={}", boardIdInternal, e)
-                val current = drafts.findByBoardId(boardIdInternal)
-                val latestTag = etag(current?.version ?: 0)
-                throw BusinessException(ErrorCode.VERSION_MISMATCH, mapOf("currentETag" to latestTag))
-            }
+            drafts.save(CourseDraft(board = board, version = 1, stopsJson = newEntriesJson))
         }
         drafts.flush()
 
