@@ -179,8 +179,13 @@ class KakaoLocalClient(
     private fun validateUrl(url: String): String? {
         if (url.isBlank()) return null
         return try {
-            val host = java.net.URL(url).host
-            if (allowedUrlHosts.contains(host)) url else null
+            val uri = URI(url)
+            val host = uri.host?.lowercase()
+            if (host !in allowedUrlHosts || uri.scheme !in setOf("http", "https")) {
+                null
+            } else {
+                URI("https", uri.userInfo, host, uri.port, uri.path, uri.query, uri.fragment).toASCIIString()
+            }
         } catch (e: Exception) {
             null
         }

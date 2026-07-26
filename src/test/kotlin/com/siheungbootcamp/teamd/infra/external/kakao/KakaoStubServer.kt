@@ -87,7 +87,7 @@ class KakaoStubServer(port: Int = 0) : AutoCloseable {
               "road_address_name": "서울 강남구 테스트로 123",
               "x": 127.05,
               "y": 37.4,
-              "place_url": "https://place.map.kakao.com/123456",
+              "place_url": "http://place.map.kakao.com/123456",
               "distance": ""
             }
           ]

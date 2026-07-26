@@ -63,6 +63,11 @@ class PlaceContractTest(
         assertTrue(candidate.has("jibunAddress"))
         assertFalse(candidate.has("roadAddressName"))
         assertFalse(candidate.has("addressName"))
+        assertEquals(
+            "https://place.map.kakao.com/123456",
+            candidate.path("sourceUrl").asText(),
+            "Kakao의 http 장소 링크는 생성 계약이 허용하는 https로 정규화해야 한다",
+        )
         val placeId = candidate.path("providerPlaceId").asText()
 
         // 장소 등록 (canonical nested 구조)
