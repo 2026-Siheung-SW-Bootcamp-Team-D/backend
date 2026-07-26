@@ -20,6 +20,8 @@ class KakaoStubServer(port: Int = 0) : AutoCloseable {
 
     private val requestCounts = mutableMapOf<String, AtomicInteger>()
     var tmapRequestCount: Int = 0
+    @Volatile var lastKeywordRawQuery: String? = null
+        private set
 
     init {
         server.createContext("/v2/local/search/keyword.json") { exchange ->
@@ -69,6 +71,7 @@ class KakaoStubServer(port: Int = 0) : AutoCloseable {
     private fun handleKeywordSearch(exchange: HttpExchange) {
         val count = requestCounts.getOrPut("keyword") { AtomicInteger(0) }
         count.incrementAndGet()
+        lastKeywordRawQuery = exchange.requestURI.rawQuery
 
         val query = exchange.requestURI.rawQuery.split("&")
             .find { it.startsWith("query=") }?.substring(6) ?: ""
@@ -84,8 +87,8 @@ class KakaoStubServer(port: Int = 0) : AutoCloseable {
               "road_address_name": "서울 강남구 테스트로 123",
               "x": 127.05,
               "y": 37.4,
-              "place_url": "https://place.map.kakao.com/123456",
-              "distance": 100
+              "place_url": "http://place.map.kakao.com/123456",
+              "distance": ""
             }
           ]
         }
