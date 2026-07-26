@@ -3,6 +3,7 @@ package com.siheungbootcamp.teamd.infra.external.kakao
 import com.sun.net.httpserver.HttpServer
 import com.sun.net.httpserver.HttpExchange
 import java.net.InetSocketAddress
+import java.net.URLDecoder
 import java.util.concurrent.atomic.AtomicInteger
 
 /**
@@ -76,7 +77,12 @@ class KakaoStubServer(port: Int = 0) : AutoCloseable {
         val query = exchange.requestURI.rawQuery.split("&")
             .find { it.startsWith("query=") }?.substring(6) ?: ""
 
-        val successBody = """
+        val decodedQuery = URLDecoder.decode(query, Charsets.UTF_8)
+        val successBody = when (decodedQuery) {
+            "영화관" -> activityResponse("activity-shared", "테스트 영화관", 800)
+            "볼링장" -> activityResponse("activity-near", "테스트 볼링장", 300)
+            "방탈출", "전시", "공연", "오락실", "체험" -> activityResponse("activity-shared", "테스트 영화관", 800)
+            else -> """
         {
           "documents": [
             {
@@ -93,6 +99,7 @@ class KakaoStubServer(port: Int = 0) : AutoCloseable {
           ]
         }
         """.trimIndent()
+        }
 
         when (keywordMode) {
             ResponseMode.SUCCESS -> {
@@ -200,6 +207,12 @@ class KakaoStubServer(port: Int = 0) : AutoCloseable {
         exchange.responseBody.write(body.toByteArray())
         exchange.responseBody.close()
     }
+
+    private fun activityResponse(id: String, name: String, distance: Int): String = """
+        {"documents":[{"id":"$id","place_name":"$name","category_name":"문화시설",
+          "address_name":"서울 강남구 테스트동","road_address_name":"서울 강남구 테스트로 123",
+          "x":127.05,"y":37.4,"place_url":"https://place.map.kakao.com/$id","distance":"$distance"}]}
+    """.trimIndent()
 
     enum class ResponseMode {
         SUCCESS, EMPTY, RATE_LIMIT, SERVER_ERROR, MALFORMED
