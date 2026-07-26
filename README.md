@@ -49,6 +49,9 @@ curl -s http://localhost:8080/actuator/health | jq
 | `ORIGIN_ENC_KEY` | 출발지 좌표 AES 암호화 키 (base64) | `openssl rand -base64 32` 결과 |
 | `KAKAO_REST_KEY` | Kakao Local API 키 (테스트에서는 stub 사용) | 테스트 불필요 |
 | `ODSAY_API_KEY` | ODsay API 키 (테스트에서는 stub 사용) | 테스트 불필요 |
+| `JOB_ENABLED` | 비동기 지역 탐색 작업 폴러 활성화 | 로컬 `true`, 테스트 `false` |
+
+운영에서는 `docker-compose.prod.yml`이 `JOB_ENABLED=true`를 강제한다. 이 값은 비밀이 아니므로 Secret Manager에서 관리하지 않는다.
 
 ## 프로필별 설정
 

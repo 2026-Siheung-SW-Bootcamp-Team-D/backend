@@ -117,6 +117,15 @@ test "$(file_mode "${TEAMD_DIR}/.env")" = 600
 grep -q '^good-sha$' "${TEAMD_DIR}/current_sha"
 grep -q '^old-sha$' "${TEAMD_DIR}/previous_sha"
 
+rendered_job_enabled="$(
+  "${REAL_DOCKER}" compose \
+    --env-file "${TEAMD_DIR}/.env" \
+    -f "${TEAMD_DIR}/docker-compose.prod.yml" \
+    config --format json |
+    python3 -c 'import json, sys; print(json.load(sys.stdin)["services"]["app"]["environment"].get("JOB_ENABLED", ""))'
+)"
+test "${rendered_job_enabled}" = "true"
+
 cat > "${TEST_DIR}/compose-secret-check.yml" <<'YAML'
 services:
   app:
