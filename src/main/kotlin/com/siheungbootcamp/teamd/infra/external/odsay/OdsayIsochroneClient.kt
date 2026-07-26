@@ -47,15 +47,14 @@ class OdsayIsochroneClient(
 
         return try {
             val root = mapper.readTree(response)
-            val feature = root.path("result").path("feature")
+            val features = root.path("result").path("geojson").path("features")
 
-            // feature 배열이 없으면 계약 위반
-            if (!feature.isArray || feature.isEmpty) {
-                logger.warn("odsay_isochrone_malformed_response missing=feature")
+            if (!features.isArray || features.isEmpty) {
+                logger.warn("odsay_isochrone_malformed_response missing=geojson.features")
                 throw BusinessException(ErrorCode.EXTERNAL_BAD_RESPONSE)
             }
 
-            val geometry = feature[0].path("geometry")
+            val geometry = features[0].path("geometry")
 
             // geometry 객체가 없거나 타입·좌표가 없으면 계약 위반
             if (geometry.isMissingNode || !geometry.has("type") || !geometry.has("coordinates")) {

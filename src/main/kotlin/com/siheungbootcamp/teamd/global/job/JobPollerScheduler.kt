@@ -5,6 +5,7 @@ import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.scheduling.annotation.Scheduled
 import org.springframework.stereotype.Component
+import java.time.Instant
 
 /**
  * 모든 JobExecutor 구현체를 폴링하는 @Scheduled 스케줄러.
@@ -20,6 +21,7 @@ class JobPollerScheduler(
     @Value("\${app.job.enabled:false}") private val enabled: Boolean,
 ) {
     private val logger = LoggerFactory.getLogger(javaClass)
+    @Volatile private var lastPollStartedAt: Instant? = null
 
     @PostConstruct
     fun logConfiguration() {
@@ -29,6 +31,7 @@ class JobPollerScheduler(
     @Scheduled(fixedDelay = 1000)
     fun poll() {
         if (!enabled) return
+        lastPollStartedAt = Instant.now()
 
         for (executor in executors) {
             try {
@@ -40,4 +43,8 @@ class JobPollerScheduler(
             }
         }
     }
+
+    fun isEnabled(): Boolean = enabled
+
+    fun lastPollStartedAt(): Instant? = lastPollStartedAt
 }

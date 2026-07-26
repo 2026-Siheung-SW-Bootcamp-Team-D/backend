@@ -23,7 +23,7 @@ import kotlin.test.assertTrue
  * - SUCCESS_MULTIPOLYGON: 200 MultiPolygon 응답 -> 성공
  * - TOO_MANY_REQUESTS: 429 1회 이후 재시도 성공 -> 재시도 동작 확인
  * - SERVER_ERROR: 500 고정 -> 재시도 소진 후 EXTERNAL_UNAVAILABLE 예외
- * - MALFORMED: 200이지만 계약 위반(feature 없음) -> EXTERNAL_BAD_RESPONSE 예외
+ * - MALFORMED: 200이지만 계약 위반(geojson.features 없음) -> EXTERNAL_BAD_RESPONSE 예외
  */
 @Testcontainers
 @SpringBootTest(
@@ -86,7 +86,7 @@ class OdsayIsochroneClientIntegrationTest(
     }
 
     @Test
-    fun `MALFORMED - 계약 위반(feature 없음) 응답은 EXTERNAL_BAD_RESPONSE 예외가 발생한다`() {
+    fun `MALFORMED - 계약 위반(geojson features 없음) 응답은 EXTERNAL_BAD_RESPONSE 예외가 발생한다`() {
         odsayStubServer.responseMode = OdsayStubServer.ResponseMode.MALFORMED
         odsayStubServer.resetCount()
 
