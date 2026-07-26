@@ -166,42 +166,7 @@ class AreaService(
             throw BusinessException(ErrorCode.FORBIDDEN)
         }
 
-        val result = if (job.status == "SUCCEEDED" && job.resultJson != null) {
-            try {
-                // Task 5: 새로운 형식으로 저장된 결과 파싱
-                val resultJson = mapper.readTree(job.resultJson!!)
-
-                // 새로운 형식 감지: participantCenter 또는 isochrones 필드의 존재로 판단
-                if (resultJson.has("participantCenter") || resultJson.has("isochrones")) {
-                    // Task 5 새로운 형식 - mapper를 사용한 직접 역직렬화
-                    try {
-                        mapper.treeToValue(resultJson, AreaSearchResult::class.java)
-                    } catch (e: Exception) {
-                        logger.warn("area_search_new_format_parse_error jobId=$jobId error=${e.message}")
-                        // 수동 파싱 fallback
-                        AreaSearchResult(
-                            participantCenter = null,
-                            isochrones = emptyList(),
-                            commonArea = null,
-                            anchors = emptyList(),
-                        )
-                    }
-                } else {
-                    // 레거시 형식 (이전 구현)
-                    AreaSearchResult(
-                        participantCenter = null,
-                        isochrones = emptyList(),
-                        commonArea = null,
-                        anchors = emptyList(),
-                    )
-                }
-            } catch (e: Exception) {
-                logger.warn("area_search_result_parse_error jobId=$jobId error=${e.message}")
-                null
-            }
-        } else {
-            null
-        }
+        val result = parseSucceededResult(job)
 
         return GetAreaSearchJobResponse(
             job = AreaJobResponse(
@@ -214,5 +179,66 @@ class AreaService(
             ),
             result = result,
         )
+    }
+
+    /**
+     * 메인 보드 지도는 검색 작업 화면의 anchor·개별 도달권이 아니라 공유 가능한 공통 영역만 필요하다.
+     * 최신 완료 작업을 시간별로 하나씩 선택해 응답 크기와 개인정보 노출 범위를 줄인다.
+     */
+    @Transactional(readOnly = true)
+    fun getAreaSearchMapResults(boardId: String, participantId: Long): AreaSearchMapResultsResponse {
+        val board = boardRepository.findByPublicId(boardId) ?: throw BusinessException(ErrorCode.RESOURCE_NOT_FOUND)
+        val boardIdLong = requireNotNull(board.id)
+        val requester = participantRepository.findById(participantId).orElse(null) ?: throw BusinessException(ErrorCode.FORBIDDEN)
+        if (requester.board.id != boardIdLong) throw BusinessException(ErrorCode.FORBIDDEN)
+
+        val results = areaJobRepository.findSucceededWithResultByBoardId(boardIdLong)
+            .groupBy { it.durationMin }
+            .mapNotNull { (_, jobs) ->
+                jobs.firstNotNullOfOrNull { job ->
+                    parseSucceededResult(job)
+                        ?.takeIf { result ->
+                            result.participantCenter != null && result.commonArea?.isNull == false
+                        }
+                        ?.let { result ->
+                            AreaSearchMapResult(
+                                jobId = job.publicId,
+                                durationMin = job.durationMin,
+                                finishedAt = job.finishedAt,
+                                participantCenter = result.participantCenter,
+                                commonArea = result.commonArea,
+                            )
+                        }
+                }
+            }
+            .sortedBy { it.durationMin }
+
+        return AreaSearchMapResultsResponse(results)
+    }
+
+    private fun parseSucceededResult(job: AreaSearchJob): AreaSearchResult? {
+        if (job.status != "SUCCEEDED") return null
+        val rawResult = job.resultJson ?: return null
+        return try {
+            val resultJson = mapper.readTree(rawResult)
+            if (!resultJson.has("participantCenter") && !resultJson.has("isochrones")) {
+                AreaSearchResult(
+                    participantCenter = null,
+                    isochrones = emptyList(),
+                    commonArea = null,
+                    anchors = emptyList(),
+                )
+            } else {
+                try {
+                    mapper.treeToValue(resultJson, AreaSearchResult::class.java)
+                } catch (e: Exception) {
+                    logger.warn("area_search_result_mapping_error jobId=${job.publicId} error=${e.message}")
+                    null
+                }
+            }
+        } catch (e: Exception) {
+            logger.warn("area_search_result_parse_error jobId=${job.publicId} error=${e.message}")
+            null
+        }
     }
 }

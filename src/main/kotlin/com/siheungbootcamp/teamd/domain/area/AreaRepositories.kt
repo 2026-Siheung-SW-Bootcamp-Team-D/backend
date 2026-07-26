@@ -31,6 +31,19 @@ interface AreaSearchJobRepository : JpaRepository<AreaSearchJob, Long> {
     fun findActiveByBoardId(boardId: Long): AreaSearchJob?
 
     /**
+     * 메인 보드 지도에 다시 표시할 수 있도록, 완료된 지역 탐색 결과를 시간별 최신순으로 읽는다.
+     * 결과 원문은 서비스에서 필요한 공개 필드만 골라 DTO로 바꾼다.
+     */
+    @Query("""
+        SELECT j FROM AreaSearchJob j
+        WHERE j.boardId = :boardId
+        AND j.status = 'SUCCEEDED'
+        AND j.resultJson IS NOT NULL
+        ORDER BY j.durationMin ASC, j.finishedAt DESC, j.createdAt DESC
+    """)
+    fun findSucceededWithResultByBoardId(@Param("boardId") boardId: Long): List<AreaSearchJob>
+
+    /**
      * 다음 처리할 작업을 QUEUED 또는 RETRY_WAIT 상태에서 찾는다.
      * SELECT FOR UPDATE SKIP LOCKED로 동시 접근 방지.
      */
