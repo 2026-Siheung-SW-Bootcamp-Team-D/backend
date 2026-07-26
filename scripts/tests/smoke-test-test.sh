@@ -28,7 +28,11 @@ done
 printf '%s\n' "${url}" >> "${CURL_CALLS}"
 case "${url}" in
   */actuator/health)
-    printf '%s' '{"status":"UP"}' > "${output_file}"
+    if [[ "${MISSING_JOB_POLLER:-}" == true ]]; then
+      printf '%s' '{"status":"UP","components":{"db":{"status":"UP"}}}' > "${output_file}"
+    else
+      printf '%s' '{"status":"UP","components":{"jobPoller":{"status":"UP"}}}' > "${output_file}"
+    fi
     printf '%s' 200
     ;;
   */api/v1/boards)
@@ -64,5 +68,11 @@ export CURL_CALLS="${TEST_DIR}/curl-calls.log"
 
 grep -q '/api/v1/boards/brd_smoke/search/addresses?q=' "${CURL_CALLS}"
 grep -q '/api/v1/boards/brd_smoke/search/places?q=' "${CURL_CALLS}"
+
+export MISSING_JOB_POLLER=true
+if "${ROOT_DIR}/scripts/smoke-test.sh" https://api.example.test; then
+  echo 'jobPoller health가 없는데 smoke가 성공했습니다.' >&2
+  exit 1
+fi
 
 echo 'smoke-test.sh Kakao 검색 검증 통과'

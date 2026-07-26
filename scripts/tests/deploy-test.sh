@@ -87,6 +87,7 @@ chmod +x "${TEST_DIR}/bin/docker" "${TEST_DIR}/bin/curl" "${TEST_DIR}/bin/gcloud
 
 export PATH="${TEST_DIR}/bin:${PATH}"
 export TEAMD_DIR="${TEST_DIR}/teamd"
+export COMPOSE_FILE="${TEAMD_DIR}/docker-compose.prod.yml"
 export DOCKER_CALLS="${TEST_DIR}/docker-calls.log"
 export GCLOUD_CALLS="${TEST_DIR}/gcloud-calls.log"
 
@@ -120,7 +121,7 @@ grep -q '^old-sha$' "${TEAMD_DIR}/previous_sha"
 rendered_job_enabled="$(
   "${REAL_DOCKER}" compose \
     --env-file "${TEAMD_DIR}/.env" \
-    -f "${TEAMD_DIR}/docker-compose.prod.yml" \
+    -f "${COMPOSE_FILE}" \
     config --format json |
     python3 -c 'import json, sys; print(json.load(sys.stdin)["services"]["app"]["environment"].get("JOB_ENABLED", ""))'
 )"

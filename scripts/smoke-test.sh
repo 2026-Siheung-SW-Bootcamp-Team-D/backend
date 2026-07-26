@@ -14,6 +14,20 @@ request() {
 
 health_status="$(request "${TEMP_DIR}/health.json" "${BASE_URL}/actuator/health")"
 [[ "${health_status}" == "200" ]] || { echo "health smoke 실패: HTTP ${health_status}" >&2; exit 1; }
+job_poller_status="$(
+  python3 - "${TEMP_DIR}/health.json" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as response:
+    body = json.load(response)
+print(body.get("components", {}).get("jobPoller", {}).get("status", "MISSING"))
+PY
+)"
+[[ "${job_poller_status}" == "UP" ]] || {
+  echo "job poller health smoke 실패: ${job_poller_status}" >&2
+  exit 1
+}
 
 create_status="$(request "${TEMP_DIR}/create.json" \
   --request POST \
