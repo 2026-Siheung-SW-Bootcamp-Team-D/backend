@@ -98,7 +98,7 @@ jobs:
             --zone "${VM_ZONE}" \
             --tunnel-through-iap \
             --quiet \
-            scripts/deploy.sh scripts/smoke-test.sh scripts/sync-secrets.sh dynamic.yml.template \
+            scripts/deploy.sh scripts/smoke-test.sh scripts/sync-secrets.sh dynamic.yml.template docker-compose.prod.yml \
             "${VM_NAME}:~/teamd-deploy/"
           # shellcheck disable=SC2016
           gcloud compute ssh "${VM_NAME}" \
@@ -106,7 +106,7 @@ jobs:
             --zone "${VM_ZONE}" \
             --tunnel-through-iap \
             --quiet \
-            --command 'sudo install -o root -g root -m 0755 "$HOME/teamd-deploy/deploy.sh" /opt/teamd/deploy.sh && sudo install -o root -g root -m 0755 "$HOME/teamd-deploy/smoke-test.sh" /opt/teamd/smoke-test.sh && sudo install -o root -g root -m 0755 "$HOME/teamd-deploy/sync-secrets.sh" /opt/teamd/sync-secrets.sh && sudo install -o root -g root -m 0644 "$HOME/teamd-deploy/dynamic.yml.template" /opt/teamd/dynamic.yml.template'
+            --command 'sudo install -o root -g root -m 0755 "$HOME/teamd-deploy/deploy.sh" /opt/teamd/deploy.sh && sudo install -o root -g root -m 0755 "$HOME/teamd-deploy/smoke-test.sh" /opt/teamd/smoke-test.sh && sudo install -o root -g root -m 0755 "$HOME/teamd-deploy/sync-secrets.sh" /opt/teamd/sync-secrets.sh && sudo install -o root -g root -m 0644 "$HOME/teamd-deploy/dynamic.yml.template" /opt/teamd/dynamic.yml.template && sudo install -o root -g root -m 0644 "$HOME/teamd-deploy/docker-compose.prod.yml" /opt/teamd/docker-compose.prod.yml'
 
       - name: VM 배포·health·smoke
         shell: bash

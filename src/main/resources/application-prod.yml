@@ -9,3 +9,5 @@ app:
   odsay:
     api-key: ${ODSAY_API_KEY}
     base-url: https://api.odsay.com
+  job:
+    enabled: ${JOB_ENABLED:true}

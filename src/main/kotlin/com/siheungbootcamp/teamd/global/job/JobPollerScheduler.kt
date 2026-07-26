@@ -1,5 +1,6 @@
 package com.siheungbootcamp.teamd.global.job
 
+import jakarta.annotation.PostConstruct
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.scheduling.annotation.Scheduled
@@ -19,6 +20,11 @@ class JobPollerScheduler(
     @Value("\${app.job.enabled:false}") private val enabled: Boolean,
 ) {
     private val logger = LoggerFactory.getLogger(javaClass)
+
+    @PostConstruct
+    fun logConfiguration() {
+        logger.info("job_poller_configuration enabled=$enabled executorCount=${executors.size}")
+    }
 
     @Scheduled(fixedDelay = 1000)
     fun poll() {
