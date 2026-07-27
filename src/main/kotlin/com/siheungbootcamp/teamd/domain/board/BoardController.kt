@@ -26,7 +26,11 @@ data class BoardProperties(val frontendBaseUrl: String = "http://localhost:5173"
 @RequestMapping("/api/v1")
 @EnableConfigurationProperties(BoardProperties::class)
 @Tag(name = "P1 보드·초대·참여자", description = "보드를 만들고 초대로 참여한 뒤 참여자 정보를 관리합니다.")
-class BoardController(private val service: BoardService, private val properties: BoardProperties) {
+class BoardController(
+    private val service: BoardService,
+    private val liveLocations: LiveLocationService,
+    private val properties: BoardProperties,
+) {
     @PostMapping("/boards")
     @Operation(summary = "보드 생성", description = "보드와 HOST 참여자를 한 트랜잭션에서 만들고 참여 토큰을 한 번 발급합니다.")
     @ApiResponse(responseCode = "201", description = "보드와 HOST 생성")
@@ -144,4 +148,38 @@ class BoardController(private val service: BoardService, private val properties:
     @RequiresBoardOpen
     @RateLimit(permits = 60, windowSeconds = 60, key = RateLimitKey.PARTICIPANT, scope = RateLimitScope.PARTICIPANT_GLOBAL)
     fun patchMe(@PathVariable boardId: String, @Parameter(hidden = true) @CurrentParticipant principal: ParticipantPrincipal, @Valid @RequestBody request: PatchMeRequest) = service.patchMe(boardId, principal, request)
+
+    @PutMapping("/boards/{boardId}/participants/me/live-location")
+    @Operation(summary = "내 실시간 위치 갱신", description = "명시적으로 위치 공유를 시작한 참여자의 최신 위치 한 건만 짧게 보관합니다.")
+    @SecurityRequirement(name = "participantToken")
+    @RateLimit(permits = 30, windowSeconds = 60, key = RateLimitKey.PARTICIPANT, scope = RateLimitScope.PARTICIPANT_GLOBAL)
+    fun putLiveLocation(
+        @PathVariable boardId: String,
+        @Parameter(hidden = true) @CurrentParticipant principal: ParticipantPrincipal,
+        @Valid @RequestBody request: LiveLocationRequest,
+    ): ResponseEntity<Void> {
+        liveLocations.save(boardId, principal, request)
+        return ResponseEntity.noContent().build()
+    }
+
+    @DeleteMapping("/boards/{boardId}/participants/me/live-location")
+    @Operation(summary = "내 실시간 위치 공유 중지")
+    @SecurityRequirement(name = "participantToken")
+    @RateLimit(permits = 30, windowSeconds = 60, key = RateLimitKey.PARTICIPANT, scope = RateLimitScope.PARTICIPANT_GLOBAL)
+    fun deleteLiveLocation(
+        @PathVariable boardId: String,
+        @Parameter(hidden = true) @CurrentParticipant principal: ParticipantPrincipal,
+    ): ResponseEntity<Void> {
+        liveLocations.remove(boardId, principal)
+        return ResponseEntity.noContent().build()
+    }
+
+    @GetMapping("/boards/{boardId}/live-locations")
+    @Operation(summary = "보드 참여자의 최신 실시간 위치 조회")
+    @SecurityRequirement(name = "participantToken")
+    @RateLimit(permits = 30, windowSeconds = 60, key = RateLimitKey.PARTICIPANT, scope = RateLimitScope.PARTICIPANT_GLOBAL)
+    fun liveLocations(
+        @PathVariable boardId: String,
+        @Parameter(hidden = true) @CurrentParticipant principal: ParticipantPrincipal,
+    ): LiveLocationListResponse = liveLocations.list(boardId, principal)
 }
