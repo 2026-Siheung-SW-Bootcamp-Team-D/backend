@@ -12,9 +12,7 @@ import org.springframework.stereotype.Service
 import org.springframework.scheduling.annotation.Scheduled
 import java.nio.ByteBuffer
 import java.security.MessageDigest
-import java.time.Duration
 import java.time.Instant
-import java.util.concurrent.ConcurrentHashMap
 import kotlin.math.ceil
 
 @Service
@@ -25,6 +23,8 @@ class PlaceTransitService(
     private val originCipher: OriginCipher,
     private val tmapTransitClient: TmapTransitClient,
 ) {
+    private val transitCache = PlaceTransitCache()
+
     fun getTransitTimes(
         boardId: String,
         placeId: String,
@@ -49,21 +49,20 @@ class PlaceTransitService(
         val ciphertext = participant.originCiphertext
             ?: return baseItem(participant, status = "ORIGIN_REQUIRED")
 
-        val cacheKey = CacheKey(
+        val cacheKey = TransitCacheKey(
             participantId = requireNotNull(participant.id),
             originHash = ciphertext.sha256(),
             destLon = destLon,
             destLat = destLat,
         )
-        cache[cacheKey]
-            ?.takeIf { !it.isExpired(now()) }
+        transitCache.get(cacheKey, now())
             ?.let { cached -> return cached.toResponse(participant) }
 
         val resolved = try {
             val (originLon, originLat) = decryptOrigin(ciphertext)
             when (val summary = tmapTransitClient.searchTransit(originLon, originLat, destLon, destLat)) {
-                null -> CachedTransitResult(status = "UNAVAILABLE", totalMinutes = null, transferCount = null, totalWalkMinutes = null, cachedAt = now())
-                else -> CachedTransitResult(
+                null -> TransitCachedResult(status = "UNAVAILABLE", totalMinutes = null, transferCount = null, totalWalkMinutes = null, cachedAt = now())
+                else -> TransitCachedResult(
                     status = "READY",
                     totalMinutes = summary.totalSeconds.toMinutesCeil(),
                     transferCount = summary.transferCount,
@@ -72,7 +71,7 @@ class PlaceTransitService(
                 )
             }
         } catch (_: Exception) {
-            CachedTransitResult(status = "FAILED", totalMinutes = null, transferCount = null, totalWalkMinutes = null, cachedAt = now())
+            TransitCachedResult(status = "FAILED", totalMinutes = null, transferCount = null, totalWalkMinutes = null, cachedAt = now())
         }
 
         if (resolved.isCacheable()) {
@@ -102,7 +101,7 @@ class PlaceTransitService(
         return buffer.double to buffer.double
     }
 
-    private fun CachedTransitResult.toResponse(participant: Participant) = baseItem(
+    private fun TransitCachedResult.toResponse(participant: Participant) = baseItem(
         participant = participant,
         status = status,
         totalMinutes = totalMinutes,
@@ -125,40 +124,9 @@ class PlaceTransitService(
      */
     @Scheduled(fixedDelayString = "\${app.tmap.transit-cache-cleanup-interval-ms:3600000}")
     fun evictExpiredCacheEntries() {
-        val current = now()
-        cache.entries.removeIf { (_, value) -> value.isExpired(current) }
+        transitCache.evictExpired(now())
     }
 
-    private fun cacheResult(cacheKey: CacheKey, result: CachedTransitResult) {
-        if (cache.size >= MAX_CACHE_ENTRIES) {
-            evictExpiredCacheEntries()
-        }
-        if (cache.size < MAX_CACHE_ENTRIES) {
-            cache[cacheKey] = result
-        }
-    }
-
-    private data class CacheKey(
-        val participantId: Long,
-        val originHash: String,
-        val destLon: Double,
-        val destLat: Double,
-    )
-
-    private data class CachedTransitResult(
-        val status: String,
-        val totalMinutes: Int?,
-        val transferCount: Int?,
-        val totalWalkMinutes: Int?,
-        val cachedAt: Instant,
-    ) {
-        fun isExpired(now: Instant): Boolean = cachedAt.plus(CACHE_TTL).isBefore(now)
-        fun isCacheable(): Boolean = status == "READY" || status == "UNAVAILABLE"
-    }
-
-    companion object {
-        private val CACHE_TTL: Duration = Duration.ofHours(24)
-        private const val MAX_CACHE_ENTRIES = 10_000
-        private val cache = ConcurrentHashMap<CacheKey, CachedTransitResult>()
-    }
+    private fun cacheResult(cacheKey: TransitCacheKey, result: TransitCachedResult) =
+        transitCache.put(cacheKey, result, now())
 }
