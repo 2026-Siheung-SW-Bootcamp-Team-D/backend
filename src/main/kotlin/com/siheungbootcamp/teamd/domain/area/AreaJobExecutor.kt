@@ -282,7 +282,7 @@ class AreaJobExecutor(
      * 흐름:
      * 1. 참여자 출발지 복호화 및 중심점 계산 (산술 평균)
      * 2. 중심점 반경 20km 내에서 3개 키워드 검색 (지하철역, 기차역, 시외버스터미널)
-     * 3. 중심점까지의 거리 순서로 정렬 (최대 3개)
+     * 3. 중심점까지의 거리 순서로 정렬하고 1km 안의 밀집 후보 제거 (최대 10개)
      * 4. 공통 영역은 참고값이며 필터링에 사용하지 않음
      */
     private fun executeAnchorPhaseWithCenter(
@@ -364,13 +364,8 @@ class AreaJobExecutor(
             }
         }
 
-        // 3. 거리 순으로 정렬하고 최대 3개 유지
-        val sortedAnchors = anchors
-            .sortedWith(compareBy<AreaAnchorDto> { it.centerDistanceMeters }
-                .thenBy { it.name }
-                .thenBy { it.anchorId })
-            .take(3)
-            .mapIndexed { index, anchor -> anchor.copy(rank = index + 1) }
+        // 3. 가까운 후보부터 1km 이상 떨어진 기준점만 최대 10개 유지
+        val sortedAnchors = selectSpacedAreaAnchors(anchors)
 
         stateWriter.updateProgress(job, "AREA_ANCHOR_COLLECTION", "found ${sortedAnchors.size} anchors")
 
@@ -477,4 +472,36 @@ class AreaJobExecutor(
         }
         return geom
     }
+}
+
+internal fun selectSpacedAreaAnchors(
+    anchors: List<AreaAnchorDto>,
+    minimumDistanceMeters: Int = 1_000,
+    limit: Int = 10,
+): List<AreaAnchorDto> {
+    val selected = anchors
+        .sortedWith(
+            compareBy<AreaAnchorDto> { it.centerDistanceMeters }
+                .thenBy { it.name }
+                .thenBy { it.anchorId },
+        )
+        .fold(emptyList<AreaAnchorDto>()) { accepted, candidate ->
+            if (
+                accepted.size >= limit ||
+                accepted.any { existing ->
+                    GeometryService.haversineDistanceMeters(
+                        existing.location.lon,
+                        existing.location.lat,
+                        candidate.location.lon,
+                        candidate.location.lat,
+                    ) < minimumDistanceMeters
+                }
+            ) {
+                accepted
+            } else {
+                accepted + candidate
+            }
+        }
+
+    return selected.mapIndexed { index, anchor -> anchor.copy(rank = index + 1) }
 }

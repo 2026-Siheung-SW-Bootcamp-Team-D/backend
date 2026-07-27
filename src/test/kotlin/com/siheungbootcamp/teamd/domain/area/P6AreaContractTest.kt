@@ -138,7 +138,7 @@ class P6AreaContractTest(
         assertEquals(true, result.has("participantCenter"))
         assertEquals(true, result.has("isochrones"))
         assertEquals(true, result.has("anchors"))
-        assertEquals(true, result.path("anchors").size() <= 3)
+        assertEquals(true, result.path("anchors").size() <= 10)
         assertEquals(126.965, result.path("participantCenter").path("lon").asDouble(), 0.000_001)
         assertEquals(37.545, result.path("participantCenter").path("lat").asDouble(), 0.000_001)
         val anchors = result.path("anchors")
