@@ -69,6 +69,9 @@ class PlaceTransitContractTest(
         val second = requestTransitTimes(host, placeId)
         assertEquals(1, tmapStubServer.requestCount(), "같은 출발지와 도착지는 로컬 캐시를 재사용해야 한다")
         assertEquals("READY", second.path("items")[0].path("status").asText())
+        assertEquals("WALK", second.path("items")[0].path("route").path("legs")[0].path("mode").asText())
+        assertTrue(second.path("items")[0].path("route").path("path").size() in 2..300)
+        assertEquals(127.0, second.path("items")[0].path("route").path("path")[0].path("lon").asDouble())
     }
 
     @Test

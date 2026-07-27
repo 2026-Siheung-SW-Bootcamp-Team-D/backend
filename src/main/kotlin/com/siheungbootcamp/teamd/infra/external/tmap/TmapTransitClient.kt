@@ -9,11 +9,11 @@ import org.springframework.stereotype.Component
 import tools.jackson.databind.ObjectMapper
 
 /**
- * TMAP Transit API(`POST /transit/routes/sub`)를 통해 출발지에서 도착지까지의
+ * TMAP Transit API(`POST /transit/routes`)를 통해 출발지에서 도착지까지의
  * 대중교통 이동정보를 조회한다.
  *
  * 요청·응답 계약은 2026-07-20 실제 키로 검증한 결과를 따른다
- * (`docs/api-validation/RESULTS.md`, `results/4_tmap_요약정보_*.json`).
+ * (`docs/api-validation/RESULTS.md`, `results/5_tmap_전체정보_metro.json`).
  * 이 엔드포인트는 도착 희망 시각을 받지 않는다 — 항상 현재 시간표 기준 경로를 반환하며
  * (`basis: CURRENT_TIMETABLE`), 권장 출발시각은 호출부가 만남 시각에서 totalSeconds를
  * 빼서 계산한다.
@@ -58,7 +58,7 @@ class TmapTransitClient(
         endLon: Double,
         endLat: Double,
     ): TransitSummary? {
-        val url = "${properties.baseUrl}/transit/routes/sub"
+        val url = "${properties.baseUrl}/transit/routes"
         val body = mapOf(
             "startX" to startLon.toString(),
             "startY" to startLat.toString(),

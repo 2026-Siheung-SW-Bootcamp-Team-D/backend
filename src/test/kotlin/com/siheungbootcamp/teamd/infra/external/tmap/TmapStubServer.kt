@@ -22,7 +22,7 @@ class TmapStubServer(port: Int = 0) : AutoCloseable {
     private val queuedModes = ArrayDeque<ResponseMode>()
 
     init {
-        server.createContext("/transit/routes/sub") { exchange ->
+        server.createContext("/transit/routes") { exchange ->
             handleTransitSearch(exchange)
         }
         server.setExecutor(null)
@@ -57,8 +57,8 @@ class TmapStubServer(port: Int = 0) : AutoCloseable {
 
         when (mode) {
             ResponseMode.SUCCESS -> {
-                // 2026-07-20 실제 키로 검증한 응답 모양(docs/api-validation/results/4_tmap_요약정보_*.json)과
-                // 같은 구조를 쓴다. totalTime/totalWalkTime은 이미 초 단위다.
+                // 2026-07-20 실제 키로 검증한 전체 경로 응답 모양
+                // (docs/api-validation/results/5_tmap_전체정보_metro.json)과 같은 구조다.
                 val response = """
                 {
                   "metaData": {
