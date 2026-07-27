@@ -19,6 +19,7 @@ enum class ErrorCode(
     RESOURCE_NOT_FOUND(HttpStatus.NOT_FOUND, "요청한 정보를 찾을 수 없습니다."),
     INVITE_NOT_FOUND(HttpStatus.NOT_FOUND, "초대 코드를 찾을 수 없거나 만료되었습니다."),
     RESOURCE_CONFLICT(HttpStatus.CONFLICT, "현재 상태와 요청이 충돌했습니다."),
+    PARTICIPANT_LIMIT_REACHED(HttpStatus.CONFLICT, "이 모임은 참여 인원이 가득 찼습니다."),
     JOB_ALREADY_RUNNING(HttpStatus.CONFLICT, "같은 작업이 이미 진행 중입니다."),
     PLACE_IN_USE(HttpStatus.CONFLICT, "코스에 포함된 장소입니다. 먼저 코스에서 제거해 주세요."),
     VERSION_MISMATCH(HttpStatus.PRECONDITION_FAILED, "다른 변경 사항이 있어 최신 초안을 다시 확인해 주세요."),

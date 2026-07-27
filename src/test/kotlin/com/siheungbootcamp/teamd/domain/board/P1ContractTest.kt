@@ -153,6 +153,34 @@ class P1ContractTest(
     }
 
     @Test
+    fun `활성 참여자는 열 명까지만 참여하고 내보낸 자리는 다시 사용할 수 있다`() {
+        val host = createBoard("참여 정원 보드", "호스트")
+        val memberTokens = (1..9).map { join(host.inviteCode, "멤버$it") }
+
+        mockMvc.post("/api/v1/invitations/${host.inviteCode}/participants") {
+            contentType = MediaType.APPLICATION_JSON
+            content = """{"nickname":"초과"}"""
+        }.andExpect {
+            status { isConflict() }
+            jsonPath("$.error.code") { value("PARTICIPANT_LIMIT_REACHED") }
+        }
+
+        mockMvc.get("/api/v1/boards/${host.boardId}/participants") {
+            bearer(host.token)
+        }.andExpect { status { isOk() }; jsonPath("$.items.length()") { value(10) } }
+
+        val removedId = memberTokens.first().substringBefore('.')
+        mockMvc.delete("/api/v1/boards/${host.boardId}/participants/$removedId") {
+            bearer(host.token)
+        }.andExpect { status { isNoContent() } }
+
+        mockMvc.post("/api/v1/invitations/${host.inviteCode}/participants") {
+            contentType = MediaType.APPLICATION_JSON
+            content = """{"nickname":"새 멤버"}"""
+        }.andExpect { status { isCreated() } }
+    }
+
+    @Test
     fun `참여 토큰을 발급하는 두 응답은 캐시를 금지한다`() {
         val created = mockMvc.post("/api/v1/boards") {
             contentType = MediaType.APPLICATION_JSON

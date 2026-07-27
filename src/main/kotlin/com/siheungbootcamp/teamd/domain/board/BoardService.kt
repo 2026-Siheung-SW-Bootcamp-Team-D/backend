@@ -72,9 +72,13 @@ class BoardService(
     fun join(code: String, request: JoinRequest): JoinResponse {
         val board = validInvitationForUpdate(code)
         if (board.status == BoardStatus.CLOSED) conflict()
+        val boardId = requireNotNull(board.id)
+        if (participants.countByBoardIdAndActiveTrue(boardId) >= 10) {
+            throw BusinessException(ErrorCode.PARTICIPANT_LIMIT_REACHED)
+        }
         val publicId = com.siheungbootcamp.teamd.global.id.PublicId.generate(com.siheungbootcamp.teamd.global.id.IdPrefix.PARTICIPANT)
         val token = ParticipantToken.generate(publicId)
-        val count = participants.countByBoardId(requireNotNull(board.id)).toInt()
+        val count = participants.countByBoardId(boardId).toInt()
         val participant = participants.save(Participant(publicId, board, normalized(request.nickname, 1, 20), ParticipantRole.MEMBER, tokenHasher.hash(token.secret), colors[count % colors.size]))
         return JoinResponse(board.publicId, participant.publicId, participant.nickname, participant.role.name, participant.avatarColor, token.value)
     }
