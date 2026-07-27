@@ -1,4 +1,4 @@
-package com.siheungbootcamp.teamd.domain.place
+package com.siheungbootcamp.teamd.domain.transit
 
 import java.time.Duration
 import java.time.Instant

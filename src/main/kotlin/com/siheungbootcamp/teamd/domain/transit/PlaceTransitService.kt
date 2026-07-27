@@ -1,7 +1,11 @@
-package com.siheungbootcamp.teamd.domain.place
+package com.siheungbootcamp.teamd.domain.transit
 
 import com.siheungbootcamp.teamd.domain.board.Participant
 import com.siheungbootcamp.teamd.domain.board.ParticipantRepository
+import com.siheungbootcamp.teamd.domain.place.PlaceRepository
+import com.siheungbootcamp.teamd.domain.place.PlaceStatus
+import com.siheungbootcamp.teamd.domain.place.PlaceTransitTimeItem
+import com.siheungbootcamp.teamd.domain.place.PlaceTransitTimesResponse
 import com.siheungbootcamp.teamd.global.auth.AuthorizationChecks
 import com.siheungbootcamp.teamd.global.auth.ParticipantPrincipal
 import com.siheungbootcamp.teamd.global.crypto.OriginCipher

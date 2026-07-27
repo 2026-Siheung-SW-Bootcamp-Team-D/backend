@@ -1,4 +1,4 @@
-package com.siheungbootcamp.teamd.domain.place
+package com.siheungbootcamp.teamd.domain.transit
 
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test

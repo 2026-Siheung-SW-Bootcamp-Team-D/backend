@@ -3,6 +3,7 @@ package com.siheungbootcamp.teamd.domain.place
 import com.siheungbootcamp.teamd.domain.board.RequiresBoardOpen
 import com.siheungbootcamp.teamd.global.auth.CurrentParticipant
 import com.siheungbootcamp.teamd.global.auth.ParticipantPrincipal
+import com.siheungbootcamp.teamd.domain.transit.PlaceTransitService
 import com.siheungbootcamp.teamd.global.error.BusinessException
 import com.siheungbootcamp.teamd.global.error.ErrorCode
 import com.siheungbootcamp.teamd.global.ratelimit.RateLimit
