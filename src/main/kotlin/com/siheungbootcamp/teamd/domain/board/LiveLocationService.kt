@@ -4,18 +4,9 @@ import com.siheungbootcamp.teamd.global.auth.AuthorizationChecks
 import com.siheungbootcamp.teamd.global.auth.ParticipantPrincipal
 import com.siheungbootcamp.teamd.global.error.BusinessException
 import com.siheungbootcamp.teamd.global.error.ErrorCode
+import org.springframework.scheduling.annotation.Scheduled
 import org.springframework.stereotype.Service
-import java.time.Duration
 import java.time.Instant
-import java.util.concurrent.ConcurrentHashMap
-
-private data class CachedLiveLocation(
-    val boardId: Long,
-    val lat: Double,
-    val lon: Double,
-    val accuracyMeters: Double?,
-    val updatedAt: Instant,
-)
 
 /** Ephemeral current-location store. It deliberately never persists location history. */
 @Service
@@ -23,24 +14,20 @@ class LiveLocationService(
     private val participants: ParticipantRepository,
     private val checks: AuthorizationChecks,
 ) {
-    private val locations = ConcurrentHashMap<Long, CachedLiveLocation>()
-    private val ttl = Duration.ofMinutes(2)
-    private val maxEntries = 10_000
+    private val locations = LiveLocationCache()
 
     fun save(boardId: String, principal: ParticipantPrincipal, request: LiveLocationRequest) {
         checks.requireBoard(principal, boardId)
         val participant = participants.findById(principal.participantId)
             .orElseThrow { BusinessException(ErrorCode.RESOURCE_NOT_FOUND) }
         val now = Instant.now()
-        evictExpired(now)
-        if (!locations.containsKey(principal.participantId) && locations.size >= maxEntries) return
-        locations[principal.participantId] = CachedLiveLocation(
+        locations.put(principal.participantId, CachedLiveLocation(
             boardId = requireNotNull(participant.board.id),
             lat = request.lat,
             lon = request.lon,
             accuracyMeters = request.accuracyMeters,
             updatedAt = now,
-        )
+        ), now)
     }
 
     fun remove(boardId: String, principal: ParticipantPrincipal) {
@@ -53,11 +40,10 @@ class LiveLocationService(
         val actor = participants.findById(principal.participantId)
             .orElseThrow { BusinessException(ErrorCode.RESOURCE_NOT_FOUND) }
         val now = Instant.now()
-        evictExpired(now)
         val boardIdInternal = requireNotNull(actor.board.id)
         return LiveLocationListResponse(
             participants.findAllByBoardIdAndActiveTrueOrderById(boardIdInternal).mapNotNull { participant ->
-                val cached = locations[requireNotNull(participant.id)]?.takeIf { it.boardId == boardIdInternal && !isExpired(it, now) }
+                val cached = locations.get(requireNotNull(participant.id), now)?.takeIf { it.boardId == boardIdInternal }
                     ?: return@mapNotNull null
                 LiveLocationResponse(
                     participantId = participant.publicId,
@@ -72,9 +58,8 @@ class LiveLocationService(
         )
     }
 
-    private fun evictExpired(now: Instant) {
-        locations.entries.removeIf { (_, value) -> isExpired(value, now) }
+    @Scheduled(fixedDelayString = "\${app.live-location.cache-cleanup-interval-ms:60000}")
+    fun evictExpiredLocations() {
+        locations.evictExpired(Instant.now())
     }
-
-    private fun isExpired(value: CachedLiveLocation, now: Instant): Boolean = value.updatedAt.plus(ttl).isBefore(now)
 }
