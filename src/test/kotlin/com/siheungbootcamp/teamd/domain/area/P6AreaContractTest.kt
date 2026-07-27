@@ -265,6 +265,53 @@ class P6AreaContractTest(
     }
 
     @Test
+    fun `출발지가 없는 참여자를 명시적으로 제외하면 등록된 두 명으로 작업을 시작한다`() {
+        val host = createBoard("일부 참여자 계산", "호스트")
+        val readyMember = inviteAndJoin(host, "출발지 등록 멤버")
+        inviteAndJoin(host, "출발지 미등록 멤버")
+        setOrigin(host, "호스트출발", 126.97, 37.55)
+        setOrigin(readyMember, "멤버출발", 126.96, 37.54)
+        val hostId = host.token.substringBefore('.')
+        val readyMemberId = readyMember.token.substringBefore('.')
+
+        mockMvc.post("/api/v1/boards/${host.boardId}/area-search-jobs") {
+            bearer(readyMember.token)
+            contentType = MediaType.APPLICATION_JSON
+            content = """{"durationMin":45,"participantIds":["$hostId","$readyMemberId"]}"""
+        }.andExpect {
+            status { isAccepted() }
+            jsonPath("$.job.estimatedExternalCalls.odsay") { value(2) }
+        }
+    }
+
+    @Test
+    fun `선택 대상에 출발지 미등록자나 다른 보드 참여자가 포함되면 거부한다`() {
+        val host = createBoard("선택 검증 보드", "호스트")
+        val missingMember = inviteAndJoin(host, "미등록 멤버")
+        setOrigin(host, "호스트출발", 126.97, 37.55)
+        val otherBoard = createBoard("다른 선택 보드", "다른 호스트")
+        setOrigin(otherBoard, "다른출발", 127.01, 37.51)
+
+        mockMvc.post("/api/v1/boards/${host.boardId}/area-search-jobs") {
+            bearer(host.token)
+            contentType = MediaType.APPLICATION_JSON
+            content = """{"durationMin":45,"participantIds":["${host.token.substringBefore('.')}","${missingMember.token.substringBefore('.')}"]}"""
+        }.andExpect {
+            status { isUnprocessableEntity() }
+            jsonPath("$.error.code") { value("ORIGIN_REQUIRED") }
+        }
+
+        mockMvc.post("/api/v1/boards/${host.boardId}/area-search-jobs") {
+            bearer(host.token)
+            contentType = MediaType.APPLICATION_JSON
+            content = """{"durationMin":45,"participantIds":["${host.token.substringBefore('.')}","${otherBoard.token.substringBefore('.')}"]}"""
+        }.andExpect {
+            status { isBadRequest() }
+            jsonPath("$.error.code") { value("INVALID_ARGUMENT") }
+        }
+    }
+
+    @Test
     fun `참여자 1명이면 400 INVALID_ARGUMENT`() {
         val host = createBoard("참여자 1명 테스트", "호스트")
         setOrigin(host, "호스트출발", 126.97, 37.55)

@@ -550,3 +550,174 @@ class P4CourseContractTest(
         val postgres = PostgreSQLContainer("postgres:16-alpine")
     }
 }
+
+@Testcontainers
+@AutoConfigureMockMvc
+@SpringBootTest(properties = [
+    "app.auth.token-pepper=test-pepper",
+    "app.crypto.origin-key=AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=",
+    "app.board.frontend-base-url=https://example.app",
+    "app.kakao.rest-key=test-kakao-key",
+    "app.legacy-api-enabled=false",
+])
+class P4CourseDraftCanonicalContractTest(
+    @Autowired private val mockMvc: MockMvc,
+    @Autowired private val objectMapper: ObjectMapper,
+) {
+    @Test
+    fun `기본 프로필에서 멤버도 placeIds 순서 초안을 저장하고 비우기를 할 수 있다`() {
+        val host = createBoard("canonical course draft", "호스트")
+        val memberToken = join(host.inviteCode, "멤버")
+        val p1 = createPlace(host, "A", 126.97, 37.55)
+        val p2 = createPlace(host, "B", 126.98, 37.56)
+
+        val initial = mockMvc.get("/api/v1/boards/${host.boardId}/course-draft") { bearer(memberToken) }
+            .andExpect {
+                status { isOk() }
+                header { string("ETag", "\"draft-0\"") }
+                jsonPath("$.placeIds.length()") { value(0) }
+            }
+            .andReturn()
+
+        mockMvc.put("/api/v1/boards/${host.boardId}/course-draft") {
+            bearer(memberToken)
+            header("If-Match", initial.response.getHeader("ETag") ?: error("ETag missing"))
+            contentType = MediaType.APPLICATION_JSON
+            content = """{"placeIds":["${p2.placeId}","${p1.placeId}"]}"""
+        }.andExpect {
+            status { isOk() }
+            header { string("ETag", "\"draft-1\"") }
+            jsonPath("$.placeIds[0]") { value(p2.placeId) }
+            jsonPath("$.placeIds[1]") { value(p1.placeId) }
+            jsonPath("$.stops[0].placeId") { value(p2.placeId) }
+            jsonPath("$.stops[1].placeId") { value(p1.placeId) }
+        }
+
+        mockMvc.get("/api/v1/boards/${host.boardId}/course-draft") { bearer(host.token) }
+            .andExpect {
+                status { isOk() }
+                jsonPath("$.placeIds[0]") { value(p2.placeId) }
+                jsonPath("$.placeIds[1]") { value(p1.placeId) }
+            }
+
+        mockMvc.put("/api/v1/boards/${host.boardId}/course-draft") {
+            bearer(host.token)
+            header("If-Match", "\"draft-1\"")
+            contentType = MediaType.APPLICATION_JSON
+            content = """{"placeIds":[]}"""
+        }.andExpect {
+            status { isOk() }
+            header { string("ETag", "\"draft-2\"") }
+            jsonPath("$.placeIds.length()") { value(0) }
+            jsonPath("$.stops.length()") { value(0) }
+        }
+    }
+
+    @Test
+    fun `기본 프로필에서는 confirm legacy API가 노출되지 않는다`() {
+        val host = createBoard("legacy hidden", "호스트")
+
+        mockMvc.post("/api/v1/boards/${host.boardId}/courses") {
+            bearer(host.token)
+            contentType = MediaType.APPLICATION_JSON
+            content = """{"draftVersion":1}"""
+        }.andExpect { status { isNotFound() } }
+    }
+
+    @Test
+    fun `placeIds 중복은 400이고 다른 보드나 삭제된 장소는 404다`() {
+        val host = createBoard("validation", "호스트")
+        val p1 = createPlace(host, "A", 126.97, 37.55)
+        val p2 = createPlace(host, "B", 126.98, 37.56)
+        val foreignBoard = createBoard("foreign", "바깥")
+        val foreignPlace = createPlace(foreignBoard, "C", 127.01, 37.58)
+
+        mockMvc.put("/api/v1/boards/${host.boardId}/course-draft") {
+            bearer(host.token)
+            header("If-Match", "\"draft-0\"")
+            contentType = MediaType.APPLICATION_JSON
+            content = """{"placeIds":["${p1.placeId}","${p1.placeId}"]}"""
+        }.andExpect {
+            status { isBadRequest() }
+            jsonPath("$.error.code") { value("INVALID_ARGUMENT") }
+        }
+
+        mockMvc.put("/api/v1/boards/${host.boardId}/course-draft") {
+            bearer(host.token)
+            header("If-Match", "\"draft-0\"")
+            contentType = MediaType.APPLICATION_JSON
+            content = """{"placeIds":["${foreignPlace.placeId}"]}"""
+        }.andExpect {
+            status { isNotFound() }
+            jsonPath("$.error.code") { value("RESOURCE_NOT_FOUND") }
+        }
+
+        mockMvc.delete("/api/v1/boards/${host.boardId}/places/${p2.placeId}") { bearer(host.token) }
+            .andExpect { status { isNoContent() } }
+
+        mockMvc.put("/api/v1/boards/${host.boardId}/course-draft") {
+            bearer(host.token)
+            header("If-Match", "\"draft-0\"")
+            contentType = MediaType.APPLICATION_JSON
+            content = """{"placeIds":["${p2.placeId}"]}"""
+        }.andExpect {
+            status { isNotFound() }
+            jsonPath("$.error.code") { value("RESOURCE_NOT_FOUND") }
+        }
+    }
+
+    private fun createBoard(name: String, nickname: String): CreatedBoard {
+        val body = mockMvc.post("/api/v1/boards") {
+            contentType = MediaType.APPLICATION_JSON
+            content = """{"name":"$name","purpose":"테스트","creatorNickname":"$nickname"}"""
+        }.andExpect { status { isCreated() } }.andReturn().response.contentAsString
+        val json = objectMapper.readTree(body)
+        return CreatedBoard(json["board"]["boardId"].asText(), json["participantToken"].asText(), json["invitation"]["inviteCode"].asText())
+    }
+
+    private fun join(inviteCode: String, nickname: String): String {
+        val body = mockMvc.post("/api/v1/invitations/$inviteCode/participants") {
+            contentType = MediaType.APPLICATION_JSON
+            content = """{"nickname":"$nickname"}"""
+        }.andExpect { status { isCreated() } }.andReturn().response.contentAsString
+        return objectMapper.readTree(body)["participantToken"].asText()
+    }
+
+    private fun createPlace(host: CreatedBoard, name: String, lon: Double, lat: Double): PlaceInfo {
+        val body = mockMvc.post("/api/v1/boards/${host.boardId}/places") {
+            bearer(host.token)
+            contentType = MediaType.APPLICATION_JSON
+            content = """
+            {
+              "name": "$name",
+              "category": "RESTAURANT",
+              "roadAddress": "서울시 어딘가",
+              "jibunAddress": "서울시",
+              "location": {"lon": $lon, "lat": $lat},
+              "source": {
+                "sourceProvider": "MANUAL",
+                "providerPlaceId": null,
+                "sourceUrl": null,
+                "inputMethod": "MANUAL_PIN"
+              }
+            }
+            """.trimIndent()
+        }.andExpect { status { isCreated() } }.andReturn().response.contentAsString
+        val json = objectMapper.readTree(body)
+        return PlaceInfo(json["placeId"].asText())
+    }
+
+    private fun org.springframework.test.web.servlet.MockHttpServletRequestDsl.bearer(token: String) {
+        header("Authorization", "Bearer $token")
+    }
+
+    private data class CreatedBoard(val boardId: String, val token: String, val inviteCode: String)
+    private data class PlaceInfo(val placeId: String)
+
+    companion object {
+        @Container
+        @ServiceConnection
+        @JvmStatic
+        val postgres = PostgreSQLContainer("postgres:16-alpine")
+    }
+}

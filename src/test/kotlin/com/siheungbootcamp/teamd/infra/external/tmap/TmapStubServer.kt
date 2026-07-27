@@ -3,6 +3,7 @@ package com.siheungbootcamp.teamd.infra.external.tmap
 import com.sun.net.httpserver.HttpServer
 import com.sun.net.httpserver.HttpExchange
 import java.net.InetSocketAddress
+import java.util.ArrayDeque
 import java.util.concurrent.atomic.AtomicInteger
 
 /**
@@ -18,6 +19,7 @@ class TmapStubServer(port: Int = 0) : AutoCloseable {
 
     var responseMode: ResponseMode = ResponseMode.SUCCESS
     private val requestCount = AtomicInteger(0)
+    private val queuedModes = ArrayDeque<ResponseMode>()
 
     init {
         server.createContext("/transit/routes/sub") { exchange ->
@@ -39,10 +41,21 @@ class TmapStubServer(port: Int = 0) : AutoCloseable {
         requestCount.set(0)
     }
 
+    fun queueResponses(vararg modes: ResponseMode) {
+        synchronized(queuedModes) {
+            queuedModes.clear()
+            modes.forEach(queuedModes::addLast)
+        }
+    }
+
     private fun handleTransitSearch(exchange: HttpExchange) {
         val count = requestCount.incrementAndGet()
 
-        when (responseMode) {
+        val mode = synchronized(queuedModes) {
+            if (queuedModes.isEmpty()) responseMode else queuedModes.removeFirst()
+        }
+
+        when (mode) {
             ResponseMode.SUCCESS -> {
                 // 2026-07-20 실제 키로 검증한 응답 모양(docs/api-validation/results/4_tmap_요약정보_*.json)과
                 // 같은 구조를 쓴다. totalTime/totalWalkTime은 이미 초 단위다.

@@ -3,6 +3,7 @@ package com.siheungbootcamp.teamd.domain.place
 import com.siheungbootcamp.teamd.domain.board.RequiresBoardOpen
 import com.siheungbootcamp.teamd.global.auth.CurrentParticipant
 import com.siheungbootcamp.teamd.global.auth.ParticipantPrincipal
+import com.siheungbootcamp.teamd.domain.transit.PlaceTransitService
 import com.siheungbootcamp.teamd.global.error.BusinessException
 import com.siheungbootcamp.teamd.global.error.ErrorCode
 import com.siheungbootcamp.teamd.global.ratelimit.RateLimit
@@ -25,7 +26,10 @@ import java.net.URI
 @RestController
 @RequestMapping("/api/v1")
 @Tag(name = "P2 장소·검색", description = "장소를 검색하고 등록·조회·삭제합니다.")
-class PlaceController(private val service: PlaceService) {
+class PlaceController(
+    private val service: PlaceService,
+    private val transitService: PlaceTransitService,
+) {
 
     // 검색 엔드포인트 (9-11, P7 canonical paths)
 
@@ -151,6 +155,18 @@ class PlaceController(private val service: PlaceService) {
         @PathVariable placeId: String,
         @Parameter(hidden = true) @CurrentParticipant principal: ParticipantPrincipal,
     ) = service.get(boardId, placeId, principal)
+
+    @PostMapping("/boards/{boardId}/places/{placeId}/transit-times")
+    @Operation(summary = "장소별 참여자 대중교통 시간 조회", description = "활성 참여자별로 현재 장소까지의 대중교통 예상 시간을 계산합니다.")
+    @SecurityRequirement(name = "participantToken")
+    @ApiResponse(responseCode = "200", description = "조회 성공")
+    @ApiResponse(responseCode = "404", description = "다른 보드의 토큰 또는 장소 없음")
+    @RateLimit(permits = 20, windowSeconds = 60, key = RateLimitKey.PARTICIPANT, scope = RateLimitScope.PARTICIPANT_GLOBAL)
+    fun getTransitTimes(
+        @PathVariable boardId: String,
+        @PathVariable placeId: String,
+        @Parameter(hidden = true) @CurrentParticipant principal: ParticipantPrincipal,
+    ): PlaceTransitTimesResponse = transitService.getTransitTimes(boardId, placeId, principal)
 
     @DeleteMapping("/boards/{boardId}/places/{placeId}")
     @Operation(summary = "장소 보관", description = "같은 보드의 활성 참여자는 누구나 후보를 보관할 수 있습니다. 이미 보관된 장소도 204를 반환합니다.")

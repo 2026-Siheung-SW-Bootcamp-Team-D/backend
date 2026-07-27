@@ -22,9 +22,17 @@ interface BoardRepository : JpaRepository<Board, Long> {
 
 interface ParticipantRepository : JpaRepository<Participant, Long> {
     fun countByBoardId(boardId: Long): Long
+    fun countByBoardIdAndActiveTrue(boardId: Long): Long
     fun findAllByBoardIdAndActiveTrueOrderById(boardId: Long): List<Participant>
     fun findByPublicIdAndBoardId(publicId: String, boardId: Long): Participant?
     fun findByIdAndBoardId(id: Long, boardId: Long): Participant?
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select p from Participant p where p.publicId = :publicId and p.board.id = :boardId and p.active = true")
+    fun findActiveByPublicIdAndBoardIdForUpdate(
+        @Param("publicId") publicId: String,
+        @Param("boardId") boardId: Long,
+    ): Participant?
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select p from Participant p where p.id = :id")

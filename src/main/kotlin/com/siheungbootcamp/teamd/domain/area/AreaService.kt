@@ -65,16 +65,27 @@ class AreaService(
             throw BusinessException(ErrorCode.INVALID_ARGUMENT)
         }
 
-        // 3. 활성 참여자 2명 이상 확인
+        // 3. 요청에서 지정한 활성 참여자를 선택한다. 생략 시 기존처럼 전체 활성 참여자를 사용한다.
         val activeParticipants = participantRepository.findAllByBoardIdAndActiveTrueOrderById(boardIdLong)
-        if (activeParticipants.size < 2) {
-            logger.warn("area_search_insufficient_participants boardId=$boardIdLong count=${activeParticipants.size}")
+        val requestedIds = request.participantIds
+        val selectedParticipants = if (requestedIds == null) {
+            activeParticipants
+        } else {
+            val normalizedIds = requestedIds.map(String::trim)
+            if (normalizedIds.any(String::isBlank) || normalizedIds.distinct().size != normalizedIds.size) {
+                throw BusinessException(ErrorCode.INVALID_ARGUMENT)
+            }
+            val activeByPublicId = activeParticipants.associateBy { it.publicId }
+            normalizedIds.map { activeByPublicId[it] ?: throw BusinessException(ErrorCode.INVALID_ARGUMENT) }
+        }
+        if (selectedParticipants.size < 2) {
+            logger.warn("area_search_insufficient_participants boardId=$boardIdLong count=${selectedParticipants.size}")
             throw BusinessException(ErrorCode.INVALID_ARGUMENT)
         }
 
         // 3-1. 참여자 행을 ID 순서대로 잠금 (origin 변경과의 동시성 race 방지)
         // 동일한 잠금 순서를 보장하기 위해 ID 오름차순으로 정렬해서 잠금
-        val lockedParticipants = activeParticipants
+        val lockedParticipants = selectedParticipants
             .sortedBy { it.id ?: error("participant must have id") }
             .map { participant ->
                 participantRepository.findByIdForUpdate(participant.id ?: error("participant must have id"))
@@ -91,8 +102,15 @@ class AreaService(
         // 5. 같은 보드의 활성 작업 확인
         val existingJob = areaJobRepository.findActiveByBoardId(boardIdLong)
         if (existingJob != null) {
-            logger.info("area_search_reusing_job jobId=${existingJob.publicId} boardId=$boardIdLong")
-            return buildResponse(existingJob)
+            val existingSnapshotIds = mapper.readTree(existingJob.snapshotJson).path("participantIds")
+            val existingParticipantIds = (0 until existingSnapshotIds.size())
+                .map { index -> existingSnapshotIds[index].asLong() }
+            val selectedParticipantIds = withOrigin.map { it.id ?: error("participant must have id") }
+            if (existingJob.durationMin == request.durationMin && existingParticipantIds == selectedParticipantIds) {
+                logger.info("area_search_reusing_job jobId=${existingJob.publicId} boardId=$boardIdLong")
+                return buildResponse(existingJob)
+            }
+            throw BusinessException(ErrorCode.RESOURCE_CONFLICT)
         }
 
         // 6. 새 작업 생성: snapshot에 participantIds만 저장

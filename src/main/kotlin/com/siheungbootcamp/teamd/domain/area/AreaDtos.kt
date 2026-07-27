@@ -1,6 +1,7 @@
 package com.siheungbootcamp.teamd.domain.area
 
 import jakarta.validation.constraints.Min
+import jakarta.validation.constraints.Size
 import tools.jackson.databind.JsonNode
 import java.time.Instant
 
@@ -11,6 +12,8 @@ import java.time.Instant
 data class CreateAreaSearchJobRequest(
     @field:Min(1)
     val durationMin: Int,
+    @field:Size(min = 2)
+    val participantIds: List<String>? = null,
 )
 
 data class CreateAreaSearchJobResponse(

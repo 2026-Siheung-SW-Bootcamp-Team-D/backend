@@ -44,8 +44,9 @@ class P7LegacyApiIsolationTest(
         assertFalse(api.contains("/votes"), "레거시 투표 경로 제거됨")
         assertFalse(api.contains("VoteController"), "레거시 투표 컨트롤러 제거됨")
 
-        // Legacy Course paths must not exist
-        assertFalse(api.contains("/course-draft"), "레거시 코스 경로 제거됨")
+        // 코스 초안만 canonical로 노출하고 확정·공개 일정은 계속 숨긴다.
+        assertTrue(api.contains("/course-draft"), "canonical 코스 초안 경로 노출")
+        assertFalse(api.contains("/courses/current"), "레거시 확정 코스 경로 제거됨")
         assertFalse(api.contains("CourseController"), "레거시 코스 컨트롤러 제거됨")
 
         // Legacy Departure paths must not exist

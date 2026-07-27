@@ -8,6 +8,7 @@ import io.swagger.v3.oas.annotations.Parameter
 import io.swagger.v3.oas.annotations.responses.ApiResponse
 import io.swagger.v3.oas.annotations.security.SecurityRequirement
 import io.swagger.v3.oas.annotations.tags.Tag
+import jakarta.validation.Valid
 import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.*
 import java.net.URI
@@ -35,7 +36,7 @@ class AreaController(
     fun createAreaSearchJob(
         @PathVariable boardId: String,
         @Parameter(hidden = true) @CurrentParticipant principal: ParticipantPrincipal,
-        @RequestBody request: CreateAreaSearchJobRequest,
+        @Valid @RequestBody request: CreateAreaSearchJobRequest,
     ): ResponseEntity<CreateAreaSearchJobResponse> {
         val response = areaService.createAreaSearchJob(
             boardId = boardId,

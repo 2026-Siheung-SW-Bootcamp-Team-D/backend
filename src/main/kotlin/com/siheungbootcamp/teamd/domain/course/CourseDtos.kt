@@ -13,6 +13,10 @@ data class PutCourseDraftRequest(
     @field:Valid @field:Size(min = 1, max = 10) val stops: List<DraftStopRequest>,
 )
 
+data class PutCourseDraftPlaceIdsRequest(
+    @field:Size(max = 10) val placeIds: List<String>,
+)
+
 data class DraftStopRequest(
     @field:NotBlank val placeId: String,
     val orderIndex: Int,
@@ -28,6 +32,7 @@ data class CourseDraftResponse(
     val version: Int,
     val stops: List<DraftStopResponse>,
     val legs: List<CourseLegResponse>,
+    val placeIds: List<String> = emptyList(),
 )
 
 data class DraftStopResponse(
