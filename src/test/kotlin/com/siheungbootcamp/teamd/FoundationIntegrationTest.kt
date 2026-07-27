@@ -36,7 +36,7 @@ class FoundationIntegrationTest(
     }
 
     @Test
-    fun `Flyway는 현재 ERD 전체 테이블과 네 개의 적용 이력을 만든다`() {
+    fun `Flyway는 현재 ERD 전체 테이블과 다섯 개의 적용 이력을 만든다`() {
         val tables = jdbcClient.sql(
             "select count(*) from information_schema.tables where table_schema='public' and table_name <> 'flyway_schema_history'",
         ).query(Int::class.java).single()
@@ -44,7 +44,7 @@ class FoundationIntegrationTest(
             .query(Int::class.java).single()
 
         assertEquals(14, tables)
-        assertEquals(4, migrations)  // V1, V2, V3, V4
+        assertEquals(5, migrations)  // V1, V2, V3, V4, V5
     }
 
     @Test
@@ -60,7 +60,7 @@ class FoundationIntegrationTest(
 
     @Test
     fun `후속 migration은 공동 후보 컬럼을 보존하고 보드 날짜 컬럼을 제거한다`() {
-        assertEquals(4, jdbcClient.sql(  // V1, V2, V3, V4
+        assertEquals(5, jdbcClient.sql(  // V1, V2, V3, V4, V5
             "select count(*) from flyway_schema_history where success=true"
         ).query(Int::class.java).single())
         assertEquals(3, jdbcClient.sql(
