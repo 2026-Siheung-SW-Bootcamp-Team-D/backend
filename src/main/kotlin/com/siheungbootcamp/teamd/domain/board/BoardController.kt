@@ -118,6 +118,24 @@ class BoardController(private val service: BoardService, private val properties:
     @RateLimit(permits = 60, windowSeconds = 60, key = RateLimitKey.PARTICIPANT, scope = RateLimitScope.PARTICIPANT_GLOBAL)
     fun participants(@PathVariable boardId: String, @Parameter(hidden = true) @CurrentParticipant principal: ParticipantPrincipal) = service.list(boardId, principal)
 
+    @DeleteMapping("/boards/{boardId}/participants/{participantId}")
+    @Operation(summary = "참여자 내보내기", description = "HOST가 같은 보드의 MEMBER를 내보내고 해당 참여 토큰을 즉시 무효화합니다.")
+    @SecurityRequirement(name = "participantToken")
+    @ApiResponse(responseCode = "204", description = "내보내기 성공")
+    @ApiResponse(responseCode = "400", description = "HOST 자신을 내보내려는 요청")
+    @ApiResponse(responseCode = "403", description = "HOST가 아닌 참여자")
+    @ApiResponse(responseCode = "404", description = "보드 또는 활성 참여자 없음")
+    @RequiresBoardOpen
+    @RateLimit(permits = 30, windowSeconds = 60, key = RateLimitKey.PARTICIPANT, scope = RateLimitScope.PARTICIPANT_GLOBAL)
+    fun removeParticipant(
+        @PathVariable boardId: String,
+        @PathVariable participantId: String,
+        @Parameter(hidden = true) @CurrentParticipant principal: ParticipantPrincipal,
+    ): ResponseEntity<Void> {
+        service.removeParticipant(boardId, participantId, principal)
+        return ResponseEntity.noContent().build()
+    }
+
     @PatchMapping("/boards/{boardId}/participants/me")
     @Operation(summary = "내 참여자 정보 수정", description = "닉네임 또는 암호화 저장되는 출발지를 변경합니다. 활성 지역 찾기 작업이 있으면 출발지 변경을 거부합니다.")
     @SecurityRequirement(name = "participantToken")

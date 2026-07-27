@@ -14,6 +14,7 @@ import org.springframework.http.MediaType
 import org.springframework.jdbc.core.simple.JdbcClient
 import org.springframework.test.web.servlet.MockMvc
 import org.springframework.test.web.servlet.get
+import org.springframework.test.web.servlet.delete
 import org.springframework.test.web.servlet.patch
 import org.springframework.test.web.servlet.post
 import org.testcontainers.junit.jupiter.Container
@@ -318,6 +319,54 @@ class P1ContractTest(
         mockMvc.patch("/api/v1/boards/${host.boardId}/participants/me") {
             bearer(host.token); contentType = MediaType.APPLICATION_JSON; content = """{"origin":null}"""
         }.andExpect { status { isOk() }; jsonPath("$.origin.registered") { value(false) } }
+    }
+
+    @Test
+    fun `HOST는 다른 MEMBER를 내보내고 해당 토큰을 즉시 무효화한다`() {
+        val host = createBoard("참여자 관리 보드", "호스트")
+        val memberToken = join(host.inviteCode, "내보낼 멤버")
+        val memberId = memberToken.substringBefore('.')
+
+        mockMvc.delete("/api/v1/boards/${host.boardId}/participants/$memberId") {
+            bearer(host.token)
+        }.andExpect { status { isNoContent() } }
+
+        mockMvc.get("/api/v1/boards/${host.boardId}/participants") {
+            bearer(host.token)
+        }.andExpect {
+            status { isOk() }
+            jsonPath("$.items.length()") { value(1) }
+            jsonPath("$.items[0].role") { value("HOST") }
+        }
+        mockMvc.get("/api/v1/boards/${host.boardId}") {
+            bearer(memberToken)
+        }.andExpect { status { isUnauthorized() } }
+    }
+
+    @Test
+    fun `MEMBER는 참여자를 내보낼 수 없고 HOST는 자신을 내보낼 수 없다`() {
+        val host = createBoard("참여자 삭제 권한 보드", "호스트")
+        val memberToken = join(host.inviteCode, "멤버")
+        val memberId = memberToken.substringBefore('.')
+        val hostId = host.token.substringBefore('.')
+
+        mockMvc.delete("/api/v1/boards/${host.boardId}/participants/$hostId") {
+            bearer(memberToken)
+        }.andExpect {
+            status { isForbidden() }
+            jsonPath("$.error.code") { value("FORBIDDEN") }
+        }
+        mockMvc.delete("/api/v1/boards/${host.boardId}/participants/$hostId") {
+            bearer(host.token)
+        }.andExpect {
+            status { isBadRequest() }
+            jsonPath("$.error.code") { value("INVALID_ARGUMENT") }
+        }
+
+        mockMvc.get("/api/v1/boards/${host.boardId}") {
+            bearer(memberToken)
+        }.andExpect { status { isOk() } }
+        assertTrue(memberId.isNotBlank())
     }
 
     private fun createBoard(name: String, nickname: String): CreatedBoard {

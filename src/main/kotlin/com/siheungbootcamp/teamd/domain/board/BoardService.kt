@@ -65,7 +65,7 @@ class BoardService(
 
     fun preview(code: String): InvitePreviewResponse {
         val board = validInvitation(code)
-        return InvitePreviewResponse(board.publicId, board.name, participants.countByBoardId(requireNotNull(board.id)), board.status != BoardStatus.CLOSED, board.inviteExpiresAt)
+        return InvitePreviewResponse(board.publicId, board.name, participants.countByBoardIdAndActiveTrue(requireNotNull(board.id)), board.status != BoardStatus.CLOSED, board.inviteExpiresAt)
     }
 
     @Transactional
@@ -106,6 +106,20 @@ class BoardService(
         val point = participant.originCiphertext?.let(::decryptOrigin)
         return ParticipantResponse(participant.publicId, participant.nickname, participant.role.name, participant.avatarColor,
             OriginResponse(point != null, participant.originLabel, point?.first, point?.second))
+    }
+
+    @Transactional
+    fun removeParticipant(boardId: String, participantId: String, principal: ParticipantPrincipal) {
+        checks.requireBoard(principal, boardId)
+        checks.requireHost(principal)
+        val board = findBoardForUpdate(boardId)
+        if (board.status == BoardStatus.CLOSED) conflict()
+        val target = participants.findActiveByPublicIdAndBoardIdForUpdate(participantId, requireNotNull(board.id))
+            ?: throw BusinessException(ErrorCode.RESOURCE_NOT_FOUND)
+        if (target.id == principal.participantId || target.role == ParticipantRole.HOST) {
+            throw BusinessException(ErrorCode.INVALID_ARGUMENT)
+        }
+        target.deactivate()
     }
 
     @Transactional
@@ -162,7 +176,7 @@ class BoardService(
     private fun findBoardForUpdate(id: String) = boards.findByPublicIdForUpdate(id) ?: throw BusinessException(ErrorCode.RESOURCE_NOT_FOUND)
     private fun summary(b: Board) = BoardSummary(b.publicId, b.name, b.purpose, b.status)
     private fun invitation(b: Board, base: String) = InvitationResponse(b.inviteCode, "${base.trimEnd('/')}/#/join/${b.inviteCode}", b.inviteExpiresAt)
-    private fun counts(b: Board): BoardCounts { val id = requireNotNull(b.id); return BoardCounts(participants.countByBoardId(id), jdbc.sql("select count(*) from place where board_id=:id and deleted_at is null").param("id", id).query(Long::class.java).single(), jdbc.sql("select count(*) from place_comment c join place p on p.id=c.place_id where p.board_id=:id and c.deleted_at is null").param("id", id).query(Long::class.java).single()) }
+    private fun counts(b: Board): BoardCounts { val id = requireNotNull(b.id); return BoardCounts(participants.countByBoardIdAndActiveTrue(id), jdbc.sql("select count(*) from place where board_id=:id and deleted_at is null").param("id", id).query(Long::class.java).single(), jdbc.sql("select count(*) from place_comment c join place p on p.id=c.place_id where p.board_id=:id and c.deleted_at is null").param("id", id).query(Long::class.java).single()) }
     private fun encryptOrigin(lon: Double, lat: Double) = originCipher.encrypt(ByteBuffer.allocate(16).putDouble(lon).putDouble(lat).array())
     private fun decryptOrigin(bytes: ByteArray): Pair<Double, Double> { val b = ByteBuffer.wrap(originCipher.decrypt(bytes)); return b.double to b.double }
     private fun conflict(): Nothing = throw BusinessException(ErrorCode.RESOURCE_CONFLICT)
