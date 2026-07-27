@@ -69,7 +69,11 @@ class TmapStubServer(port: Int = 0) : AutoCloseable {
                           "totalTime": 1920,
                           "totalWalkTime": 420,
                           "pathType": 1,
-                          "transferCount": 1
+                          "transferCount": 1,
+                          "legs": [
+                            { "mode": "WALK", "sectionTime": 120, "steps": [{ "linestring": "127.0,37.5 127.001,37.501" }] },
+                            { "mode": "SUBWAY", "route": "수도권2호선", "start": { "name": "강남" }, "end": { "name": "신도림" }, "sectionTime": 1680, "passShape": { "linestring": "127.001,37.501 126.99,37.505 126.98,37.51" } }
+                          ]
                         }
                       ]
                     }
