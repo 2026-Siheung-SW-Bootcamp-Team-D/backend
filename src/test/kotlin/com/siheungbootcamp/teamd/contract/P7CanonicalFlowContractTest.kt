@@ -218,12 +218,18 @@ class P7CanonicalFlowContractTest(
 
         listOf(
             "/api/v1/boards/${host.boardId}/votes",
-            "/api/v1/boards/${host.boardId}/course-draft",
             "/api/v1/boards/${host.boardId}/participants/me/departure-guide",
         ).forEach { path ->
             mockMvc.get(path) {
                 bearer(host.token)
             }.andExpect { status { isNotFound() } }
+        }
+
+        mockMvc.get("/api/v1/boards/${host.boardId}/course-draft") {
+            bearer(host.token)
+        }.andExpect {
+            status { isOk() }
+            jsonPath("$.placeIds.length()") { value(0) }
         }
 
         mockMvc.get("/api/v1/public/schedules/not-found")

@@ -15,6 +15,7 @@ import org.springframework.transaction.annotation.Transactional
 import tools.jackson.databind.ObjectMapper
 import java.time.Instant
 import java.time.ZoneId
+import java.time.temporal.ChronoUnit
 
 /**
  * 코스 초안·확정 코스·공개 일정의 비즈니스 로직을 담당한다(P4).
@@ -47,6 +48,49 @@ class CourseService(
     }
 
     @Transactional
+    fun putDraftPlaceIds(boardId: String, principal: ParticipantPrincipal, ifMatch: String?, request: PutCourseDraftPlaceIdsRequest): CourseDraftResponse {
+        checks.requireBoard(principal, boardId)
+        val board = findBoardForUpdate(boardId)
+        val boardIdInternal = requireNotNull(board.id)
+
+        if (ifMatch.isNullOrBlank()) throw BusinessException(ErrorCode.INVALID_ARGUMENT)
+
+        val existing = drafts.findByBoardIdForUpdate(boardIdInternal)
+        val currentVersion = existing?.version ?: 0
+        val expectedTag = etag(currentVersion)
+        if (normalizeETag(ifMatch) != expectedTag) {
+            throw BusinessException(ErrorCode.VERSION_MISMATCH, mapOf("currentETag" to expectedTag))
+        }
+
+        val validatedPlaceIds = validateCanonicalPlaceIds(boardIdInternal, request.placeIds)
+        val newEntries = validatedPlaceIds.mapIndexed { index, placeId ->
+            DraftStopEntry(
+                placeId = placeId,
+                orderIndex = index + 1,
+                role = if (index == 0) CourseStopRole.FIRST_MEETING.name else CourseStopRole.ETC.name,
+                scheduledAt = CANONICAL_DRAFT_BASE_TIME.plus(index.toLong(), ChronoUnit.HOURS).toString(),
+            )
+        }
+
+        val savedVersion = when {
+            existing != null -> {
+                existing.replace(serializeStops(newEntries))
+                drafts.flush()
+                existing.version
+            }
+
+            newEntries.isEmpty() -> 0
+            else -> {
+                val saved = drafts.save(CourseDraft(board = board, version = 1, stopsJson = serializeStops(newEntries)))
+                drafts.flush()
+                saved.version
+            }
+        }
+
+        return buildDraftResponse(boardIdInternal, savedVersion, newEntries)
+    }
+
+    @Transactional
     fun putDraft(boardId: String, principal: ParticipantPrincipal, ifMatch: String?, request: PutCourseDraftRequest): CourseDraftResponse {
         checks.requireBoard(principal, boardId)
         checks.requireHost(principal)
@@ -75,11 +119,7 @@ class CourseService(
         }
         drafts.flush()
 
-        return CourseDraftResponse(
-            version = saved.version,
-            stops = newEntries.map { DraftStopResponse(it.placeId, it.orderIndex, it.role, Instant.parse(it.scheduledAt)) },
-            legs = LegEstimator.estimate(validated.map { (item, place) -> LegEstimator.StopPoint(item.orderIndex, place.lon, place.lat) }),
-        )
+        return buildDraftResponse(boardIdInternal, saved.version, newEntries)
     }
 
     @Transactional
@@ -183,7 +223,7 @@ class CourseService(
     }
 
     private fun buildDraftResponse(boardIdInternal: Long, version: Int, entries: List<DraftStopEntry>): CourseDraftResponse {
-        if (entries.isEmpty()) return CourseDraftResponse(version, emptyList(), emptyList())
+        if (entries.isEmpty()) return CourseDraftResponse(version, emptyList(), emptyList(), emptyList())
         val ordered = entries.sortedBy { it.orderIndex }
         // 삭제 필터 없이 조회한다: 초안은 확정 전까지 usage checker의 보호를 받지 않으므로
         // 저장된 뒤 장소가 삭제될 수 있다. 그 스톱을 숨기지 않고 placeDeleted로만 표시한다.
@@ -197,7 +237,19 @@ class CourseService(
                 DraftStopResponse(entry.placeId, entry.orderIndex, entry.role, Instant.parse(entry.scheduledAt), placeDeleted = place.deletedAt != null)
             },
             legs = LegEstimator.estimate(ordered.map { entry -> val p = placeById.getValue(entry.placeId); LegEstimator.StopPoint(entry.orderIndex, p.lon, p.lat) }),
+            placeIds = ordered.map { it.placeId },
         )
+    }
+
+    private fun validateCanonicalPlaceIds(boardIdInternal: Long, placeIds: List<String>): List<String> {
+        if (placeIds.size > 10) throw BusinessException(ErrorCode.INVALID_ARGUMENT)
+        if (placeIds.any { it.isBlank() }) throw BusinessException(ErrorCode.INVALID_ARGUMENT)
+        if (placeIds.distinct().size != placeIds.size) throw BusinessException(ErrorCode.INVALID_ARGUMENT)
+        placeIds.forEach { placeId ->
+            places.findByPublicIdAndBoardIdAndDeletedAtIsNull(placeId, boardIdInternal)
+                ?: throw BusinessException(ErrorCode.RESOURCE_NOT_FOUND)
+        }
+        return placeIds
     }
 
     /** 장소 1~10개, orderIndex 1부터 연속·중복 없음, 1번만 FIRST_MEETING, 시각 역전 없음, 활성 장소만 허용한다. */
@@ -237,6 +289,7 @@ class CourseService(
     private data class CourseStopInput(val placeId: String, val orderIndex: Int, val role: String, val scheduledAt: Instant)
 
     companion object {
+        private val CANONICAL_DRAFT_BASE_TIME: Instant = Instant.parse("2100-01-01T00:00:00Z")
         private val VALID_ROLES = CourseStopRole.entries.map { it.name }.toSet()
     }
 }

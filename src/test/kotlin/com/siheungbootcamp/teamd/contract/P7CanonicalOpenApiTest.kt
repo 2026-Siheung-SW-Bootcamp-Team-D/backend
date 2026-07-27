@@ -53,12 +53,14 @@ class P7CanonicalOpenApiTest(
             "/api/v1/boards/{boardId}/participants" to setOf("get"),
             "/api/v1/boards/{boardId}/participants/{participantId}" to setOf("delete"),
             "/api/v1/boards/{boardId}/participants/me" to setOf("patch"),
+            "/api/v1/boards/{boardId}/course-draft" to setOf("get", "put"),
             "/api/v1/boards/{boardId}/search/places" to setOf("get"),
             "/api/v1/boards/{boardId}/search/addresses" to setOf("get"),
             "/api/v1/boards/{boardId}/search/reverse-geocode" to setOf("get"),
             "/api/v1/boards/{boardId}/search/nearby-places" to setOf("get"),
             "/api/v1/boards/{boardId}/places" to setOf("get", "post"),
             "/api/v1/boards/{boardId}/places/{placeId}" to setOf("get", "delete"),
+            "/api/v1/boards/{boardId}/places/{placeId}/transit-times" to setOf("post"),
             "/api/v1/boards/{boardId}/places/{placeId}/likes/me" to setOf("put", "delete"),
             "/api/v1/boards/{boardId}/places/{placeId}/comments" to setOf("get", "post"),
             "/api/v1/boards/{boardId}/places/{placeId}/comments/{commentId}" to setOf("patch", "delete"),
@@ -72,15 +74,15 @@ class P7CanonicalOpenApiTest(
                 assertTrue(paths.path(path).has(method), "$method $path 경로 필수")
             }
         }
-        assertEquals(28, expectedOperations.values.sumOf { it.size }, "canonical API는 28개 연산이어야 함")
+        assertEquals(31, expectedOperations.values.sumOf { it.size }, "canonical API는 31개 연산이어야 함")
 
         // Task 2: Legacy place search paths must not exist
         assertFalse(api.contains("/place-candidates"), "레거시 장소 후보 경로 제거됨")
         assertFalse(api.contains("/address-candidates"), "레거시 주소 후보 경로 제거됨")
         assertFalse(api.contains("/coordinate-address"), "레거시 좌표 변환 경로 제거됨")
-        // Task 6 검증: Vote/Course/Departure 경로 제거
+        // 레거시 투표·확정 코스·출발 안내는 계속 숨긴다.
         assertFalse(api.contains("/votes"), "레거시 투표 경로 제거됨")
-        assertFalse(api.contains("/course-draft"), "레거시 코스 경로 제거됨")
+        assertFalse(api.contains("/courses/current"), "레거시 확정 코스 경로 제거됨")
         assertFalse(api.contains("/departure-guide"), "레거시 출발 경로 제거됨")
     }
 
