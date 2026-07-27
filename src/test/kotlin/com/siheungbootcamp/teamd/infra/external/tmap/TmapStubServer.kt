@@ -42,8 +42,10 @@ class TmapStubServer(port: Int = 0) : AutoCloseable {
     }
 
     fun queueResponses(vararg modes: ResponseMode) {
-        queuedModes.clear()
-        modes.forEach(queuedModes::addLast)
+        synchronized(queuedModes) {
+            queuedModes.clear()
+            modes.forEach(queuedModes::addLast)
+        }
     }
 
     private fun handleTransitSearch(exchange: HttpExchange) {

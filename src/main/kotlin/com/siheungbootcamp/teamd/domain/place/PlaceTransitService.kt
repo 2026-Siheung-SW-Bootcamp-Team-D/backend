@@ -9,6 +9,7 @@ import com.siheungbootcamp.teamd.global.error.BusinessException
 import com.siheungbootcamp.teamd.global.error.ErrorCode
 import com.siheungbootcamp.teamd.infra.external.tmap.TmapTransitClient
 import org.springframework.stereotype.Service
+import org.springframework.scheduling.annotation.Scheduled
 import java.nio.ByteBuffer
 import java.security.MessageDigest
 import java.time.Duration
@@ -75,7 +76,7 @@ class PlaceTransitService(
         }
 
         if (resolved.isCacheable()) {
-            cache[cacheKey] = resolved
+            cacheResult(cacheKey, resolved)
         }
         return resolved.toResponse(participant)
     }
@@ -117,6 +118,26 @@ class PlaceTransitService(
 
     private fun now(): Instant = Instant.now()
 
+    /**
+     * Keeps the process-local transit cache bounded while preserving the
+     * no-dependency MVP. Expired entries are also removed before insertions so
+     * a busy process does not retain entries until the next scheduled sweep.
+     */
+    @Scheduled(fixedDelayString = "\${app.tmap.transit-cache-cleanup-interval-ms:3600000}")
+    fun evictExpiredCacheEntries() {
+        val current = now()
+        cache.entries.removeIf { (_, value) -> value.isExpired(current) }
+    }
+
+    private fun cacheResult(cacheKey: CacheKey, result: CachedTransitResult) {
+        if (cache.size >= MAX_CACHE_ENTRIES) {
+            evictExpiredCacheEntries()
+        }
+        if (cache.size < MAX_CACHE_ENTRIES) {
+            cache[cacheKey] = result
+        }
+    }
+
     private data class CacheKey(
         val participantId: Long,
         val originHash: String,
@@ -137,6 +158,7 @@ class PlaceTransitService(
 
     companion object {
         private val CACHE_TTL: Duration = Duration.ofHours(24)
+        private const val MAX_CACHE_ENTRIES = 10_000
         private val cache = ConcurrentHashMap<CacheKey, CachedTransitResult>()
     }
 }
