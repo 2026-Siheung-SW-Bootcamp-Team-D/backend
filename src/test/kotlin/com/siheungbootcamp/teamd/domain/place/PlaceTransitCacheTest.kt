@@ -22,6 +22,21 @@ class PlaceTransitCacheTest {
         assertEquals(1, cache.size())
     }
 
+    @Test
+    fun `transit cache does not exceed its entry limit`() {
+        val now = Instant.parse("2026-07-27T00:00:00Z")
+        val cache = PlaceTransitCache(maxEntries = 1)
+        val firstKey = TransitCacheKey(1, "first", 126.98, 37.56)
+        val secondKey = TransitCacheKey(2, "second", 126.99, 37.57)
+
+        cache.put(firstKey, readyResult(now), now)
+        cache.put(secondKey, readyResult(now), now)
+
+        assertEquals(1, cache.size())
+        assertEquals("READY", cache.get(firstKey, now)?.status)
+        assertEquals(null, cache.get(secondKey, now))
+    }
+
     private fun readyResult(cachedAt: Instant) = TransitCachedResult(
         status = "READY", totalMinutes = 30, transferCount = 1, totalWalkMinutes = 5, cachedAt = cachedAt,
     )
