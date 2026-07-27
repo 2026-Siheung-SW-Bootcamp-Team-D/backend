@@ -17,6 +17,7 @@ import org.springframework.test.web.servlet.get
 import org.springframework.test.web.servlet.delete
 import org.springframework.test.web.servlet.patch
 import org.springframework.test.web.servlet.post
+import org.springframework.test.web.servlet.put
 import org.testcontainers.junit.jupiter.Container
 import org.testcontainers.junit.jupiter.Testcontainers
 import org.testcontainers.postgresql.PostgreSQLContainer
@@ -367,6 +368,47 @@ class P1ContractTest(
             bearer(memberToken)
         }.andExpect { status { isOk() } }
         assertTrue(memberId.isNotBlank())
+    }
+
+    @Test
+    fun `활성 참여자 위치는 같은 보드에만 최신 값으로 공유되고 중지할 수 있다`() {
+        val host = createBoard("실시간 위치 보드", "호스트")
+        val memberToken = join(host.inviteCode, "멤버")
+        val other = createBoard("다른 위치 보드", "다른사람")
+
+        mockMvc.put("/api/v1/boards/${host.boardId}/participants/me/live-location") {
+            bearer(host.token); contentType = MediaType.APPLICATION_JSON
+            content = """{"lat":37.4979,"lon":127.0276,"accuracyMeters":18.4}"""
+        }.andExpect { status { isNoContent() } }
+
+        mockMvc.get("/api/v1/boards/${host.boardId}/live-locations") {
+            bearer(memberToken)
+        }.andExpect {
+            status { isOk() }
+            jsonPath("$.items.length()") { value(1) }
+            jsonPath("$.items[0].nickname") { value("호스트") }
+            jsonPath("$.items[0].lat") { value(37.4979) }
+            jsonPath("$.items[0].lon") { value(127.0276) }
+            jsonPath("$.items[0].accuracyMeters") { value(18.4) }
+            jsonPath("$.items[0].updatedAt") { exists() }
+            jsonPath("$.items[0].origin") { doesNotExist() }
+        }
+
+        mockMvc.get("/api/v1/boards/${host.boardId}/live-locations") {
+            bearer(other.token)
+        }.andExpect { status { isNotFound() } }
+
+        mockMvc.put("/api/v1/boards/${host.boardId}/participants/me/live-location") {
+            bearer(host.token); contentType = MediaType.APPLICATION_JSON
+            content = """{"lat":99,"lon":127}"""
+        }.andExpect { status { isBadRequest() } }
+
+        mockMvc.delete("/api/v1/boards/${host.boardId}/participants/me/live-location") {
+            bearer(host.token)
+        }.andExpect { status { isNoContent() } }
+        mockMvc.get("/api/v1/boards/${host.boardId}/live-locations") {
+            bearer(memberToken)
+        }.andExpect { status { isOk() }; jsonPath("$.items.length()") { value(0) } }
     }
 
     private fun createBoard(name: String, nickname: String): CreatedBoard {

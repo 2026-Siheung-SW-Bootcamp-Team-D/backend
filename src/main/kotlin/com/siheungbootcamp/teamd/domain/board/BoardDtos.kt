@@ -67,3 +67,21 @@ data class JoinResponse(val boardId: String, val participantId: String, val nick
 data class OriginResponse(val registered: Boolean, val label: String? = null, val lon: Double? = null, val lat: Double? = null)
 data class ParticipantResponse(val participantId: String, val nickname: String, val role: String, val avatarColor: String, val origin: OriginResponse)
 data class ParticipantListResponse(val items: List<ParticipantResponse>)
+
+data class LiveLocationRequest(
+    @field:DecimalMin("-90.0") @field:DecimalMax("90.0") val lat: Double,
+    @field:DecimalMin("-180.0") @field:DecimalMax("180.0") val lon: Double,
+    @field:DecimalMin("0.0") @field:DecimalMax("5000.0") val accuracyMeters: Double? = null,
+)
+
+data class LiveLocationResponse(
+    val participantId: String,
+    val nickname: String,
+    val avatarColor: String,
+    val lat: Double,
+    val lon: Double,
+    val accuracyMeters: Double?,
+    val updatedAt: Instant,
+)
+
+data class LiveLocationListResponse(val items: List<LiveLocationResponse>)

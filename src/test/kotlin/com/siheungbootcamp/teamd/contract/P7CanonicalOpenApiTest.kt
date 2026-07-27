@@ -53,6 +53,8 @@ class P7CanonicalOpenApiTest(
             "/api/v1/boards/{boardId}/participants" to setOf("get"),
             "/api/v1/boards/{boardId}/participants/{participantId}" to setOf("delete"),
             "/api/v1/boards/{boardId}/participants/me" to setOf("patch"),
+            "/api/v1/boards/{boardId}/participants/me/live-location" to setOf("put", "delete"),
+            "/api/v1/boards/{boardId}/live-locations" to setOf("get"),
             "/api/v1/boards/{boardId}/course-draft" to setOf("get", "put"),
             "/api/v1/boards/{boardId}/search/places" to setOf("get"),
             "/api/v1/boards/{boardId}/search/addresses" to setOf("get"),
@@ -74,7 +76,7 @@ class P7CanonicalOpenApiTest(
                 assertTrue(paths.path(path).has(method), "$method $path 경로 필수")
             }
         }
-        assertEquals(31, expectedOperations.values.sumOf { it.size }, "canonical API는 31개 연산이어야 함")
+        assertEquals(34, expectedOperations.values.sumOf { it.size }, "canonical API는 34개 연산이어야 함")
 
         // Task 2: Legacy place search paths must not exist
         assertFalse(api.contains("/place-candidates"), "레거시 장소 후보 경로 제거됨")
