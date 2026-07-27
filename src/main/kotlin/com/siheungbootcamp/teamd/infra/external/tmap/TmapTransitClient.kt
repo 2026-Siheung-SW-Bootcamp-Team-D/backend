@@ -36,7 +36,12 @@ class TmapTransitClient(
         val transferCount: Int,
         val fareAmount: Int, // KRW
         val totalWalkSeconds: Int,
+        val route: TransitRoute? = null,
     )
+
+    data class TransitRoute(val legs: List<TransitLeg>, val path: List<TransitPoint>)
+    data class TransitLeg(val mode: String, val routeName: String?, val startName: String?, val endName: String?, val durationMinutes: Int)
+    data class TransitPoint(val lon: Double, val lat: Double)
 
     /**
      * 출발지에서 도착지까지의 대중교통 최단 경로를 조회한다.
@@ -106,6 +111,9 @@ class TmapTransitClient(
                 transferCount = itinerary.path("transferCount").asInt(),
                 fareAmount = totalFareNode.asInt(),
                 totalWalkSeconds = itinerary.path("totalWalkTime").asInt(),
+                route = runCatching { parseRoute(itinerary) }
+                    .onFailure { logger.info("tmap_transit_route_parse_skipped") }
+                    .getOrNull(),
             )
         } catch (e: BusinessException) {
             throw e
@@ -113,5 +121,35 @@ class TmapTransitClient(
             logger.warn("tmap_transit_parse_error error=${e.message}")
             throw BusinessException(ErrorCode.EXTERNAL_BAD_RESPONSE)
         }
+    }
+
+    private fun parseRoute(itinerary: tools.jackson.databind.JsonNode): TransitRoute {
+        val legs = buildList {
+            for (leg in itinerary.path("legs")) add(TransitLeg(
+                mode = leg.path("mode").asText("UNKNOWN"), routeName = leg.path("route").asText().ifBlank { null },
+                startName = leg.path("start").path("name").asText().ifBlank { null }, endName = leg.path("end").path("name").asText().ifBlank { null },
+                durationMinutes = kotlin.math.ceil(leg.path("sectionTime").asDouble(0.0) / 60.0).toInt(),
+            ))
+        }
+        val path = buildList {
+            for (leg in itinerary.path("legs")) {
+                val transit = parseLineString(leg.path("passShape").path("linestring").asText())
+                if (transit.isNotEmpty()) addAll(transit) else for (step in leg.path("steps")) addAll(parseLineString(step.path("linestring").asText()))
+            }
+        }
+        return TransitRoute(legs, shrinkPath(path))
+    }
+
+    private fun parseLineString(linestring: String): List<TransitPoint> = linestring.split(Regex("\\s+")).mapNotNull { pair ->
+        val values = pair.split(",")
+        val lon = values.getOrNull(0)?.toDoubleOrNull()
+        val lat = values.getOrNull(1)?.toDoubleOrNull()
+        if (lon != null && lat != null && lon in 124.0..132.0 && lat in 33.0..39.0) TransitPoint(lon, lat) else null
+    }
+
+    private fun shrinkPath(path: List<TransitPoint>): List<TransitPoint> {
+        if (path.size <= 300) return path
+        val step = kotlin.math.ceil((path.size - 1) / 299.0).toInt()
+        return buildList { for (index in path.indices step step) add(path[index]); if (last() != path.last()) add(path.last()) }
     }
 }

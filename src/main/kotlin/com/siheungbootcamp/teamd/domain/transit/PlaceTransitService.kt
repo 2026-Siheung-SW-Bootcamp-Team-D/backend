@@ -6,6 +6,9 @@ import com.siheungbootcamp.teamd.domain.place.PlaceRepository
 import com.siheungbootcamp.teamd.domain.place.PlaceStatus
 import com.siheungbootcamp.teamd.domain.place.PlaceTransitTimeItem
 import com.siheungbootcamp.teamd.domain.place.PlaceTransitTimesResponse
+import com.siheungbootcamp.teamd.domain.place.TransitLegDto
+import com.siheungbootcamp.teamd.domain.place.TransitPointDto
+import com.siheungbootcamp.teamd.domain.place.TransitRouteDto
 import com.siheungbootcamp.teamd.global.auth.AuthorizationChecks
 import com.siheungbootcamp.teamd.global.auth.ParticipantPrincipal
 import com.siheungbootcamp.teamd.global.crypto.OriginCipher
@@ -65,17 +68,18 @@ class PlaceTransitService(
         val resolved = try {
             val (originLon, originLat) = decryptOrigin(ciphertext)
             when (val summary = tmapTransitClient.searchTransit(originLon, originLat, destLon, destLat)) {
-                null -> TransitCachedResult(status = "UNAVAILABLE", totalMinutes = null, transferCount = null, totalWalkMinutes = null, cachedAt = now())
+                null -> TransitCachedResult(status = "UNAVAILABLE", totalMinutes = null, transferCount = null, totalWalkMinutes = null, route = null, cachedAt = now())
                 else -> TransitCachedResult(
                     status = "READY",
                     totalMinutes = summary.totalSeconds.toMinutesCeil(),
                     transferCount = summary.transferCount,
                     totalWalkMinutes = summary.totalWalkSeconds.toMinutesCeil(),
+                    route = summary.route,
                     cachedAt = now(),
                 )
             }
         } catch (_: Exception) {
-            TransitCachedResult(status = "FAILED", totalMinutes = null, transferCount = null, totalWalkMinutes = null, cachedAt = now())
+            TransitCachedResult(status = "FAILED", totalMinutes = null, transferCount = null, totalWalkMinutes = null, route = null, cachedAt = now())
         }
 
         if (resolved.isCacheable()) {
@@ -90,6 +94,7 @@ class PlaceTransitService(
         totalMinutes: Int? = null,
         transferCount: Int? = null,
         totalWalkMinutes: Int? = null,
+        route: TransitRouteDto? = null,
     ) = PlaceTransitTimeItem(
         participantId = participant.publicId,
         nickname = participant.nickname,
@@ -98,6 +103,7 @@ class PlaceTransitService(
         totalMinutes = totalMinutes,
         transferCount = transferCount,
         totalWalkMinutes = totalWalkMinutes,
+        route = route,
     )
 
     private fun decryptOrigin(ciphertext: ByteArray): Pair<Double, Double> {
@@ -111,6 +117,10 @@ class PlaceTransitService(
         totalMinutes = totalMinutes,
         transferCount = transferCount,
         totalWalkMinutes = totalWalkMinutes,
+        route = route?.let { value -> TransitRouteDto(
+            legs = value.legs.map { TransitLegDto(it.mode, it.routeName, it.startName, it.endName, it.durationMinutes) },
+            path = value.path.map { TransitPointDto(it.lon, it.lat) },
+        ) },
     )
 
     private fun ByteArray.sha256(): String = MessageDigest.getInstance("SHA-256")

@@ -51,6 +51,7 @@ internal data class TransitCachedResult(
     val totalMinutes: Int?,
     val transferCount: Int?,
     val totalWalkMinutes: Int?,
+    val route: com.siheungbootcamp.teamd.infra.external.tmap.TmapTransitClient.TransitRoute? = null,
     val cachedAt: Instant,
 ) {
     fun isExpired(now: Instant, ttl: Duration): Boolean = cachedAt.plus(ttl).isBefore(now)
