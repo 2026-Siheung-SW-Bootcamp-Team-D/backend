@@ -79,6 +79,7 @@ class BoardService(
         if (board.status == BoardStatus.CLOSED) conflict()
         board.update(request.name?.let { normalized(it, 2, 40) }, request.purpose)
         boards.flush()
+        notifyAfterCommit(board.publicId, "board")
         return BoardResponse(board.publicId, board.name, board.purpose, board.status, counts = counts(board), updatedAt = board.updatedAt)
     }
 
@@ -133,6 +134,7 @@ class BoardService(
             staleNotifier.markStale(requireNotNull(participant.id))
         }
         val point = participant.originCiphertext?.let(::decryptOrigin)
+        notifyAfterCommit(board.publicId, "participants")
         return ParticipantResponse(participant.publicId, participant.nickname, participant.role.name, participant.avatarColor,
             OriginResponse(point != null, participant.originLabel, point?.first, point?.second))
     }

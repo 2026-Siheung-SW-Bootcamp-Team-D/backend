@@ -447,6 +447,7 @@ class PlaceService(
         // 멱등성: INSERT ... ON CONFLICT DO NOTHING으로 동시성 경쟁(race condition) 없이 처리
         // 이미 좋아요되어 있으면 무시하고, 없으면 생성한다.
         likes.insertOrIgnore(placeId_internal, principal.participantId)
+        notifyAfterCommit(boardId, "places")
     }
 
     @Transactional
@@ -461,6 +462,7 @@ class PlaceService(
 
         // 멱등성: 없어도 성공 반환
         likes.deleteByPlaceIdAndParticipantId(placeId_internal, principal.participantId)
+        notifyAfterCommit(boardId, "places")
     }
 
     private fun requireBoardParticipant(boardId: String, principal: ParticipantPrincipal) {

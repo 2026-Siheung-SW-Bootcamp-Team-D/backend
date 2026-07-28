@@ -8,6 +8,10 @@ import com.siheungbootcamp.teamd.global.web.PageResponse
 import com.siheungbootcamp.teamd.domain.board.BoardRepository
 import com.siheungbootcamp.teamd.domain.board.ParticipantRepository
 import com.siheungbootcamp.teamd.domain.place.PlaceRepository
+import com.siheungbootcamp.teamd.global.sse.BoardEventPublisher
+import org.springframework.transaction.support.TransactionSynchronization
+import org.springframework.transaction.support.TransactionSynchronizationManager
+import org.slf4j.LoggerFactory
 import org.springframework.dao.DataIntegrityViolationException
 import org.springframework.data.domain.Pageable
 import org.springframework.stereotype.Service
@@ -31,7 +35,24 @@ class VoteService(
     private val boards: BoardRepository,
     private val participants: ParticipantRepository,
     private val checks: AuthorizationChecks,
+    private val events: BoardEventPublisher,
 ) {
+    private val log = LoggerFactory.getLogger(VoteService::class.java)
+
+    /** 커밋 이후에만 SSE 신호를 보낸다. */
+    private fun notifyAfterCommit(boardId: String, resource: String) {
+        TransactionSynchronizationManager.registerSynchronization(
+            object : TransactionSynchronization {
+                override fun afterCommit() {
+                    try {
+                        events.publish(boardId, resource)
+                    } catch (e: Exception) {
+                        log.warn("SSE 발행 실패: boardId={}, resource={}", boardId, resource, e)
+                    }
+                }
+            },
+        )
+    }
     @Transactional
     fun create(boardId: String, principal: ParticipantPrincipal, request: CreateVoteRequest): Any {
         checks.requireBoard(principal, boardId)
@@ -89,6 +110,7 @@ class VoteService(
                 options.save(option)
             }
 
+            notifyAfterCommit(boardId, "vote")
             return mapVoteToListResponse(savedVote, request.placeIds.size)
         } catch (e: DataIntegrityViolationException) {
             // 보드당 열린 투표 1개 제약(uq_vote_open_per_board, V1__baseline.sql)만 409로 변환한다.
@@ -276,6 +298,7 @@ class VoteService(
             )
             ballots.save(newBallot)
         }
+        notifyAfterCommit(boardId, "vote")
     }
 
     @Transactional
@@ -306,6 +329,7 @@ class VoteService(
 
         vote.close()
         votes.save(vote)
+        notifyAfterCommit(boardId, "vote")
     }
 
     private fun mapVoteToListResponse(vote: Vote, optionCount: Int): VoteListItemResponse {
