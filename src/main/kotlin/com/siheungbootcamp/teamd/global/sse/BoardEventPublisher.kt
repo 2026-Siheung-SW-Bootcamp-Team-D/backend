@@ -23,8 +23,9 @@ class BoardEventPublisher {
     /** 새 SSE 연결을 등록한다. 타임아웃을 두지 않아야 클라이언트가 계속 붙어 있을 수 있다. */
     fun register(boardId: String): SseEmitter {
         val emitter = SseEmitter(Long.MAX_VALUE)
-        val boardEmitters = emitters.computeIfAbsent(boardId) { CopyOnWriteArrayList() }
-        boardEmitters.add(emitter)
+        emitters.compute(boardId) { _, existing ->
+            (existing ?: CopyOnWriteArrayList()).apply { add(emitter) }
+        }
 
         val remove = Runnable { removeEmitter(boardId, emitter) }
         emitter.onCompletion(remove)
@@ -39,8 +40,8 @@ class BoardEventPublisher {
         for (emitter in boardEmitters) {
             try {
                 emitter.send(SseEmitter.event().name("update").data(mapOf("resource" to resource)))
-            } catch (e: IOException) {
-                // 한 클라이언트의 연결 끊김이 다른 연결이나 호출한 트랜잭션에 전파되면 안 된다.
+            } catch (e: Exception) {
+                // IOException, IllegalStateException 등 전송 실패 시 해당 연결만 정리하고 계속 진행한다.
                 removeEmitter(boardId, emitter)
             }
         }
@@ -53,7 +54,7 @@ class BoardEventPublisher {
             for (emitter in boardEmitters) {
                 try {
                     emitter.send(SseEmitter.event().comment("ping"))
-                } catch (e: IOException) {
+                } catch (e: Exception) {
                     removeEmitter(boardId, emitter)
                 }
             }
@@ -63,10 +64,9 @@ class BoardEventPublisher {
     internal fun activeCount(boardId: String): Int = emitters[boardId]?.size ?: 0
 
     private fun removeEmitter(boardId: String, emitter: SseEmitter) {
-        val boardEmitters = emitters[boardId] ?: return
-        boardEmitters.remove(emitter)
-        if (boardEmitters.isEmpty()) {
-            emitters.remove(boardId, boardEmitters)
+        emitters.computeIfPresent(boardId) { _, list ->
+            list.remove(emitter)
+            if (list.isEmpty()) null else list
         }
     }
 }
