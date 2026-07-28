@@ -22,7 +22,7 @@ import jakarta.validation.Valid
  *
  * 엔드포인트 16-19:
  * - GET /boards/{boardId}/places/{placeId}/comments (16): 페이지네이션
- * - POST /boards/{boardId}/places/{placeId}/comments (17): 생성, 참여자당 rate limit 20회/분
+ * - POST /boards/{boardId}/places/{placeId}/comments (17): 생성, 참여자당 rate limit 120회/분
  * - PATCH /boards/{boardId}/places/{placeId}/comments/{commentId} (18): 수정, 작성자만
  * - DELETE /boards/{boardId}/places/{placeId}/comments/{commentId} (19): 삭제, 작성자만
  */
@@ -47,9 +47,9 @@ class CommentController(
     }
 
     @PostMapping
-    @Operation(summary = "댓글 작성", description = "장소에 댓글을 작성한다. 참여자당 20회/분 rate limit.")
+    @Operation(summary = "댓글 작성", description = "장소에 댓글을 작성한다. 참여자당 120회/분 rate limit.")
     @ApiResponse(responseCode = "409", description = "보드가 종료됨")
-    @RateLimit(permits = 20, windowSeconds = 60, key = RateLimitKey.PARTICIPANT, scope = RateLimitScope.ENDPOINT)
+    @RateLimit(permits = 120, windowSeconds = 60, key = RateLimitKey.PARTICIPANT, scope = RateLimitScope.ENDPOINT)
     @RequiresBoardOpen
     fun create(
         @PathVariable boardId: String,

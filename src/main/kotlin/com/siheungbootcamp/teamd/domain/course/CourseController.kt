@@ -37,7 +37,7 @@ class CourseController(private val service: CourseService, private val propertie
     @SecurityRequirement(name = "participantToken")
     @ApiResponse(responseCode = "200", description = "조회 성공")
     @ApiResponse(responseCode = "404", description = "다른 보드의 토큰(존재 숨김)")
-    @RateLimit(permits = 60, windowSeconds = 60, key = RateLimitKey.PARTICIPANT, scope = RateLimitScope.PARTICIPANT_GLOBAL)
+    @RateLimit(permits = 1200, windowSeconds = 60, key = RateLimitKey.PARTICIPANT, scope = RateLimitScope.PARTICIPANT_GLOBAL)
     fun getDraft(
         @PathVariable boardId: String,
         @Parameter(hidden = true) @CurrentParticipant principal: ParticipantPrincipal,
@@ -54,7 +54,7 @@ class CourseController(private val service: CourseService, private val propertie
     @ApiResponse(responseCode = "403", description = "호스트가 아님")
     @ApiResponse(responseCode = "412", description = "If-Match 버전 불일치(최신 ETag 헤더 포함)")
     @RequiresBoardOpen
-    @RateLimit(permits = 60, windowSeconds = 60, key = RateLimitKey.PARTICIPANT, scope = RateLimitScope.PARTICIPANT_GLOBAL)
+    @RateLimit(permits = 1200, windowSeconds = 60, key = RateLimitKey.PARTICIPANT, scope = RateLimitScope.PARTICIPANT_GLOBAL)
     fun putDraft(
         @PathVariable boardId: String,
         @RequestHeader(value = "If-Match", required = false) ifMatch: String?,
@@ -73,7 +73,7 @@ class CourseController(private val service: CourseService, private val propertie
     @ApiResponse(responseCode = "403", description = "호스트가 아님")
     @ApiResponse(responseCode = "409", description = "draftVersion 불일치")
     @RequiresBoardOpen
-    @RateLimit(permits = 60, windowSeconds = 60, key = RateLimitKey.PARTICIPANT, scope = RateLimitScope.PARTICIPANT_GLOBAL)
+    @RateLimit(permits = 1200, windowSeconds = 60, key = RateLimitKey.PARTICIPANT, scope = RateLimitScope.PARTICIPANT_GLOBAL)
     fun confirm(
         @PathVariable boardId: String,
         @Parameter(hidden = true) @CurrentParticipant principal: ParticipantPrincipal,
@@ -88,7 +88,7 @@ class CourseController(private val service: CourseService, private val propertie
     @SecurityRequirement(name = "participantToken")
     @ApiResponse(responseCode = "200", description = "조회 성공")
     @ApiResponse(responseCode = "404", description = "확정 코스 없음 또는 다른 보드의 토큰")
-    @RateLimit(permits = 60, windowSeconds = 60, key = RateLimitKey.PARTICIPANT, scope = RateLimitScope.PARTICIPANT_GLOBAL)
+    @RateLimit(permits = 1200, windowSeconds = 60, key = RateLimitKey.PARTICIPANT, scope = RateLimitScope.PARTICIPANT_GLOBAL)
     fun getCurrent(
         @PathVariable boardId: String,
         @Parameter(hidden = true) @CurrentParticipant principal: ParticipantPrincipal,
@@ -99,7 +99,7 @@ class CourseController(private val service: CourseService, private val propertie
     @SecurityRequirement(name = "participantToken")
     @ApiResponse(responseCode = "200", description = "조회 성공")
     @ApiResponse(responseCode = "404", description = "코스 없음 또는 다른 보드의 토큰")
-    @RateLimit(permits = 60, windowSeconds = 60, key = RateLimitKey.PARTICIPANT, scope = RateLimitScope.PARTICIPANT_GLOBAL)
+    @RateLimit(permits = 1200, windowSeconds = 60, key = RateLimitKey.PARTICIPANT, scope = RateLimitScope.PARTICIPANT_GLOBAL)
     fun getVersion(
         @PathVariable boardId: String,
         @PathVariable courseId: String,

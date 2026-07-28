@@ -73,8 +73,8 @@ class DepartureController(
     @ApiResponse(responseCode = "422", description = "출발지 미등록 (ORIGIN_REQUIRED)")
     @ApiResponse(responseCode = "409", description = "확정 코스 또는 첫 만남 없음 (RESOURCE_CONFLICT)")
     @ApiResponse(responseCode = "404", description = "다른 보드의 토큰")
-    @ApiResponse(responseCode = "429", description = "참여자당 5회/시간 제한 초과")
-    @RateLimit(permits = 5, windowSeconds = 3600, key = RateLimitKey.PARTICIPANT)
+    @ApiResponse(responseCode = "429", description = "참여자당 30회/시간 제한 초과")
+    @RateLimit(permits = 30, windowSeconds = 3600, key = RateLimitKey.PARTICIPANT)
     fun requestCalculation(
         @PathVariable boardId: String,
         @Parameter(hidden = true) @CurrentParticipant principal: ParticipantPrincipal,

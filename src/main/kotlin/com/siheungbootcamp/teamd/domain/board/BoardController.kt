@@ -47,7 +47,7 @@ class BoardController(
     @SecurityRequirement(name = "participantToken")
     @ApiResponse(responseCode = "200", description = "조회 성공")
     @ApiResponse(responseCode = "404", description = "보드가 없거나 다른 보드 토큰")
-    @RateLimit(permits = 60, windowSeconds = 60, key = RateLimitKey.PARTICIPANT, scope = RateLimitScope.PARTICIPANT_GLOBAL)
+    @RateLimit(permits = 1200, windowSeconds = 60, key = RateLimitKey.PARTICIPANT, scope = RateLimitScope.PARTICIPANT_GLOBAL)
     fun get(@PathVariable boardId: String, @Parameter(hidden = true) @CurrentParticipant principal: ParticipantPrincipal) = service.get(boardId, principal)
 
     @PatchMapping("/boards/{boardId}")
@@ -56,13 +56,13 @@ class BoardController(
     @ApiResponse(responseCode = "200", description = "수정 성공")
     @ApiResponse(responseCode = "403", description = "활성 참여자가 아님")
     @ApiResponse(responseCode = "409", description = "이미 종료된 보드")
-    @RateLimit(permits = 60, windowSeconds = 60, key = RateLimitKey.PARTICIPANT, scope = RateLimitScope.PARTICIPANT_GLOBAL)
+    @RateLimit(permits = 1200, windowSeconds = 60, key = RateLimitKey.PARTICIPANT, scope = RateLimitScope.PARTICIPANT_GLOBAL)
     fun patch(@PathVariable boardId: String, @Parameter(hidden = true) @CurrentParticipant principal: ParticipantPrincipal, @Valid @RequestBody request: PatchBoardRequest) = service.patch(boardId, principal, request)
 
     @GetMapping("/boards/{boardId}/invitation")
     @Operation(summary = "현재 초대 정보 조회", description = "보드의 모든 참여자가 저장된 초대 코드 원문과 URL, 만료 시각을 조회할 수 있습니다.")
     @SecurityRequirement(name = "participantToken")
-    @RateLimit(permits = 60, windowSeconds = 60, key = RateLimitKey.PARTICIPANT, scope = RateLimitScope.PARTICIPANT_GLOBAL)
+    @RateLimit(permits = 1200, windowSeconds = 60, key = RateLimitKey.PARTICIPANT, scope = RateLimitScope.PARTICIPANT_GLOBAL)
     fun invitation(@PathVariable boardId: String, @Parameter(hidden = true) @CurrentParticipant principal: ParticipantPrincipal) = service.invitation(boardId, principal, properties.frontendBaseUrl)
 
     @PutMapping("/boards/{boardId}/selected-place")
@@ -73,7 +73,7 @@ class BoardController(
     @ApiResponse(responseCode = "404", description = "보드 또는 장소 없음(또는 ACTIVE 상태가 아님)")
     @ApiResponse(responseCode = "409", description = "보드가 종료됨")
     @RequiresBoardOpen
-    @RateLimit(permits = 60, windowSeconds = 60, key = RateLimitKey.PARTICIPANT, scope = RateLimitScope.PARTICIPANT_GLOBAL)
+    @RateLimit(permits = 1200, windowSeconds = 60, key = RateLimitKey.PARTICIPANT, scope = RateLimitScope.PARTICIPANT_GLOBAL)
     fun putSelectedPlace(
         @PathVariable boardId: String,
         @Parameter(hidden = true) @CurrentParticipant principal: ParticipantPrincipal,
@@ -88,7 +88,7 @@ class BoardController(
     @ApiResponse(responseCode = "404", description = "보드 없음")
     @ApiResponse(responseCode = "409", description = "보드가 종료됨")
     @RequiresBoardOpen
-    @RateLimit(permits = 60, windowSeconds = 60, key = RateLimitKey.PARTICIPANT, scope = RateLimitScope.PARTICIPANT_GLOBAL)
+    @RateLimit(permits = 1200, windowSeconds = 60, key = RateLimitKey.PARTICIPANT, scope = RateLimitScope.PARTICIPANT_GLOBAL)
     fun deleteSelectedPlace(
         @PathVariable boardId: String,
         @Parameter(hidden = true) @CurrentParticipant principal: ParticipantPrincipal,
@@ -98,10 +98,10 @@ class BoardController(
     }
 
     @GetMapping("/invitations/{inviteCode}")
-    @Operation(summary = "초대 확인", description = "인증 없이 초대 대상 보드와 참여 가능 여부를 확인합니다. IP당 분당 30회로 제한됩니다.")
+    @Operation(summary = "초대 확인", description = "인증 없이 초대 대상 보드와 참여 가능 여부를 확인합니다. IP당 분당 300회로 제한됩니다.")
     @ApiResponse(responseCode = "200", description = "유효한 초대")
     @ApiResponse(responseCode = "404", description = "없거나 만료된 초대")
-    @RateLimit(permits = 30, windowSeconds = 60, key = RateLimitKey.IP)
+    @RateLimit(permits = 300, windowSeconds = 60, key = RateLimitKey.IP)
     fun preview(@PathVariable inviteCode: String) = service.preview(inviteCode)
 
     @PostMapping("/invitations/{inviteCode}/participants")
@@ -119,7 +119,7 @@ class BoardController(
     @GetMapping("/boards/{boardId}/participants")
     @Operation(summary = "참여자 목록", description = "본인 출발지는 상세 정보를, 타인 출발지는 registered 여부만 반환합니다.")
     @SecurityRequirement(name = "participantToken")
-    @RateLimit(permits = 60, windowSeconds = 60, key = RateLimitKey.PARTICIPANT, scope = RateLimitScope.PARTICIPANT_GLOBAL)
+    @RateLimit(permits = 1200, windowSeconds = 60, key = RateLimitKey.PARTICIPANT, scope = RateLimitScope.PARTICIPANT_GLOBAL)
     fun participants(@PathVariable boardId: String, @Parameter(hidden = true) @CurrentParticipant principal: ParticipantPrincipal) = service.list(boardId, principal)
 
     @DeleteMapping("/boards/{boardId}/participants/{participantId}")
@@ -130,7 +130,7 @@ class BoardController(
     @ApiResponse(responseCode = "403", description = "HOST가 아닌 참여자")
     @ApiResponse(responseCode = "404", description = "보드 또는 활성 참여자 없음")
     @RequiresBoardOpen
-    @RateLimit(permits = 30, windowSeconds = 60, key = RateLimitKey.PARTICIPANT, scope = RateLimitScope.PARTICIPANT_GLOBAL)
+    @RateLimit(permits = 1200, windowSeconds = 60, key = RateLimitKey.PARTICIPANT, scope = RateLimitScope.PARTICIPANT_GLOBAL)
     fun removeParticipant(
         @PathVariable boardId: String,
         @PathVariable participantId: String,
@@ -146,13 +146,13 @@ class BoardController(
     @ApiResponse(responseCode = "200", description = "수정 성공")
     @ApiResponse(responseCode = "409", description = "종료된 보드 또는 활성 지역 찾기 작업")
     @RequiresBoardOpen
-    @RateLimit(permits = 60, windowSeconds = 60, key = RateLimitKey.PARTICIPANT, scope = RateLimitScope.PARTICIPANT_GLOBAL)
+    @RateLimit(permits = 1200, windowSeconds = 60, key = RateLimitKey.PARTICIPANT, scope = RateLimitScope.PARTICIPANT_GLOBAL)
     fun patchMe(@PathVariable boardId: String, @Parameter(hidden = true) @CurrentParticipant principal: ParticipantPrincipal, @Valid @RequestBody request: PatchMeRequest) = service.patchMe(boardId, principal, request)
 
     @PutMapping("/boards/{boardId}/participants/me/live-location")
     @Operation(summary = "내 실시간 위치 갱신", description = "명시적으로 위치 공유를 시작한 참여자의 최신 위치 한 건만 짧게 보관합니다.")
     @SecurityRequirement(name = "participantToken")
-    @RateLimit(permits = 30, windowSeconds = 60, key = RateLimitKey.PARTICIPANT, scope = RateLimitScope.PARTICIPANT_GLOBAL)
+    @RateLimit(permits = 600, windowSeconds = 60, key = RateLimitKey.PARTICIPANT, scope = RateLimitScope.PARTICIPANT_GLOBAL)
     fun putLiveLocation(
         @PathVariable boardId: String,
         @Parameter(hidden = true) @CurrentParticipant principal: ParticipantPrincipal,
@@ -165,7 +165,7 @@ class BoardController(
     @DeleteMapping("/boards/{boardId}/participants/me/live-location")
     @Operation(summary = "내 실시간 위치 공유 중지")
     @SecurityRequirement(name = "participantToken")
-    @RateLimit(permits = 30, windowSeconds = 60, key = RateLimitKey.PARTICIPANT, scope = RateLimitScope.PARTICIPANT_GLOBAL)
+    @RateLimit(permits = 600, windowSeconds = 60, key = RateLimitKey.PARTICIPANT, scope = RateLimitScope.PARTICIPANT_GLOBAL)
     fun deleteLiveLocation(
         @PathVariable boardId: String,
         @Parameter(hidden = true) @CurrentParticipant principal: ParticipantPrincipal,
@@ -177,7 +177,7 @@ class BoardController(
     @GetMapping("/boards/{boardId}/live-locations")
     @Operation(summary = "보드 참여자의 최신 실시간 위치 조회")
     @SecurityRequirement(name = "participantToken")
-    @RateLimit(permits = 30, windowSeconds = 60, key = RateLimitKey.PARTICIPANT, scope = RateLimitScope.PARTICIPANT_GLOBAL)
+    @RateLimit(permits = 600, windowSeconds = 60, key = RateLimitKey.PARTICIPANT, scope = RateLimitScope.PARTICIPANT_GLOBAL)
     fun liveLocations(
         @PathVariable boardId: String,
         @Parameter(hidden = true) @CurrentParticipant principal: ParticipantPrincipal,
