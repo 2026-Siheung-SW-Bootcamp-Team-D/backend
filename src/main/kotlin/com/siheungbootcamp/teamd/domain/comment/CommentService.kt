@@ -21,7 +21,7 @@ import org.springframework.transaction.annotation.Transactional
  *
  * 댓글은 soft delete를 지원하며, 목록 조회는 삭제된 댓글을 제외한다.
  * 작성자만 수정·삭제 가능하다.
- * 생성 시 참여자별 20회/분 rate limit을 적용한다.
+ * 생성 시 참여자별 120회/분 rate limit을 적용한다.
  */
 @Service
 @Transactional(readOnly = true)

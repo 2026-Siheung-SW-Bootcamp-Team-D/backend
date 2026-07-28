@@ -22,7 +22,7 @@ class RateLimitInterceptor(private val clock: Clock = Clock.systemUTC()) : Handl
         val limit = method.getMethodAnnotation(RateLimit::class.java) ?: return true
         val bucketScope = when (limit.scope) {
             RateLimitScope.ENDPOINT -> method.method.toGenericString()
-            RateLimitScope.PARTICIPANT_GLOBAL -> "participant-global"
+            RateLimitScope.PARTICIPANT_GLOBAL -> "participant-global:${limit.bucket}"
         }
         val key = "$bucketScope:${resolveKey(limit.key, request)}"
         val now = clock.instant().epochSecond

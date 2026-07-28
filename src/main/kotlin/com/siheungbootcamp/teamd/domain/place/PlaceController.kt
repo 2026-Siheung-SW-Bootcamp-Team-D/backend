@@ -9,6 +9,7 @@ import com.siheungbootcamp.teamd.global.error.ErrorCode
 import com.siheungbootcamp.teamd.global.ratelimit.RateLimit
 import com.siheungbootcamp.teamd.global.ratelimit.RateLimitKey
 import com.siheungbootcamp.teamd.global.ratelimit.RateLimitScope
+import com.siheungbootcamp.teamd.global.ratelimit.RateLimitBucket
 import io.swagger.v3.oas.annotations.Operation
 import io.swagger.v3.oas.annotations.Parameter
 import io.swagger.v3.oas.annotations.responses.ApiResponse
@@ -39,7 +40,7 @@ class PlaceController(
     @ApiResponse(responseCode = "200", description = "검색 성공, 결과 없을 수 있음")
     @ApiResponse(responseCode = "400", description = "쿼리 길이·형식 오류")
     @ApiResponse(responseCode = "404", description = "다른 보드의 토큰(존재 숨김)")
-    @RateLimit(permits = 20, windowSeconds = 60, key = RateLimitKey.PARTICIPANT, scope = RateLimitScope.PARTICIPANT_GLOBAL)
+    @RateLimit(permits = 300, windowSeconds = 60, key = RateLimitKey.PARTICIPANT, scope = RateLimitScope.PARTICIPANT_GLOBAL, bucket = RateLimitBucket.EXTERNAL)
     fun searchPlaces(
         @PathVariable boardId: String,
         @RequestParam(required = true, name = "q") query: String,
@@ -55,7 +56,7 @@ class PlaceController(
     @SecurityRequirement(name = "participantToken")
     @ApiResponse(responseCode = "200", description = "검색 성공, 결과 없을 수 있음")
     @ApiResponse(responseCode = "404", description = "다른 보드의 토큰(존재 숨김)")
-    @RateLimit(permits = 20, windowSeconds = 60, key = RateLimitKey.PARTICIPANT, scope = RateLimitScope.PARTICIPANT_GLOBAL)
+    @RateLimit(permits = 300, windowSeconds = 60, key = RateLimitKey.PARTICIPANT, scope = RateLimitScope.PARTICIPANT_GLOBAL, bucket = RateLimitBucket.EXTERNAL)
     fun searchAddresses(
         @PathVariable boardId: String,
         @RequestParam(required = true, name = "q") query: String,
@@ -67,7 +68,7 @@ class PlaceController(
     @SecurityRequirement(name = "participantToken")
     @ApiResponse(responseCode = "200", description = "조회 성공, 주소 없을 수 있음")
     @ApiResponse(responseCode = "404", description = "다른 보드의 토큰(존재 숨김)")
-    @RateLimit(permits = 20, windowSeconds = 60, key = RateLimitKey.PARTICIPANT, scope = RateLimitScope.PARTICIPANT_GLOBAL)
+    @RateLimit(permits = 300, windowSeconds = 60, key = RateLimitKey.PARTICIPANT, scope = RateLimitScope.PARTICIPANT_GLOBAL, bucket = RateLimitBucket.EXTERNAL)
     fun reverseGeocode(
         @PathVariable boardId: String,
         @RequestParam(required = true) lon: Double,
@@ -81,7 +82,7 @@ class PlaceController(
     @ApiResponse(responseCode = "200", description = "검색 성공, 결과 없을 수 있음")
     @ApiResponse(responseCode = "400", description = "입력 검증 오류 (좌표 누락, 둘 다 누락/동시 전달 등)")
     @ApiResponse(responseCode = "404", description = "다른 보드의 토큰(존재 숨김)")
-    @RateLimit(permits = 20, windowSeconds = 60, key = RateLimitKey.PARTICIPANT, scope = RateLimitScope.PARTICIPANT_GLOBAL)
+    @RateLimit(permits = 300, windowSeconds = 60, key = RateLimitKey.PARTICIPANT, scope = RateLimitScope.PARTICIPANT_GLOBAL, bucket = RateLimitBucket.EXTERNAL)
     fun searchNearbyPlaces(
         @PathVariable boardId: String,
         @RequestParam(required = false) lon: Double?,
@@ -103,7 +104,7 @@ class PlaceController(
     @ApiResponse(responseCode = "404", description = "다른 보드의 토큰(존재 숨김)")
     @ApiResponse(responseCode = "409", description = "보드가 종료됨")
     @RequiresBoardOpen
-    @RateLimit(permits = 20, windowSeconds = 60, key = RateLimitKey.PARTICIPANT, scope = RateLimitScope.PARTICIPANT_GLOBAL)
+    @RateLimit(permits = 1200, windowSeconds = 60, key = RateLimitKey.PARTICIPANT, scope = RateLimitScope.PARTICIPANT_GLOBAL)
     fun createPlace(
         @PathVariable boardId: String,
         @Parameter(hidden = true) @CurrentParticipant principal: ParticipantPrincipal,
@@ -119,7 +120,7 @@ class PlaceController(
     @SecurityRequirement(name = "participantToken")
     @ApiResponse(responseCode = "200", description = "조회 성공")
     @ApiResponse(responseCode = "404", description = "다른 보드의 토큰(존재 숨김)")
-    @RateLimit(permits = 60, windowSeconds = 60, key = RateLimitKey.PARTICIPANT, scope = RateLimitScope.PARTICIPANT_GLOBAL)
+    @RateLimit(permits = 1200, windowSeconds = 60, key = RateLimitKey.PARTICIPANT, scope = RateLimitScope.PARTICIPANT_GLOBAL)
     fun listPlaces(
         @PathVariable boardId: String,
         @RequestParam(required = false) category: String?,
@@ -149,7 +150,7 @@ class PlaceController(
     @ApiResponse(responseCode = "200", description = "조회 성공")
     @ApiResponse(responseCode = "404", description = "다른 보드의 토큰(존재 숨김)")
     @ApiResponse(responseCode = "404", description = "장소가 없음")
-    @RateLimit(permits = 60, windowSeconds = 60, key = RateLimitKey.PARTICIPANT, scope = RateLimitScope.PARTICIPANT_GLOBAL)
+    @RateLimit(permits = 1200, windowSeconds = 60, key = RateLimitKey.PARTICIPANT, scope = RateLimitScope.PARTICIPANT_GLOBAL)
     fun getPlace(
         @PathVariable boardId: String,
         @PathVariable placeId: String,
@@ -161,7 +162,7 @@ class PlaceController(
     @SecurityRequirement(name = "participantToken")
     @ApiResponse(responseCode = "200", description = "조회 성공")
     @ApiResponse(responseCode = "404", description = "다른 보드의 토큰 또는 장소 없음")
-    @RateLimit(permits = 20, windowSeconds = 60, key = RateLimitKey.PARTICIPANT, scope = RateLimitScope.PARTICIPANT_GLOBAL)
+    @RateLimit(permits = 300, windowSeconds = 60, key = RateLimitKey.PARTICIPANT, scope = RateLimitScope.PARTICIPANT_GLOBAL, bucket = RateLimitBucket.EXTERNAL)
     fun getTransitTimes(
         @PathVariable boardId: String,
         @PathVariable placeId: String,
@@ -176,7 +177,7 @@ class PlaceController(
     @ApiResponse(responseCode = "404", description = "장소 또는 다른 보드의 토큰(존재 숨김)")
     @ApiResponse(responseCode = "409", description = "투표·코스에서 사용 중")
     @RequiresBoardOpen
-    @RateLimit(permits = 20, windowSeconds = 60, key = RateLimitKey.PARTICIPANT, scope = RateLimitScope.PARTICIPANT_GLOBAL)
+    @RateLimit(permits = 1200, windowSeconds = 60, key = RateLimitKey.PARTICIPANT, scope = RateLimitScope.PARTICIPANT_GLOBAL)
     fun deletePlace(
         @PathVariable boardId: String,
         @PathVariable placeId: String,
@@ -195,7 +196,7 @@ class PlaceController(
     @ApiResponse(responseCode = "403", description = "다른 보드의 토큰")
     @ApiResponse(responseCode = "404", description = "장소 또는 보드 없음")
     @ApiResponse(responseCode = "409", description = "보드가 종료됨")
-    @RateLimit(permits = 60, windowSeconds = 60, key = RateLimitKey.PARTICIPANT, scope = RateLimitScope.PARTICIPANT_GLOBAL)
+    @RateLimit(permits = 1200, windowSeconds = 60, key = RateLimitKey.PARTICIPANT, scope = RateLimitScope.PARTICIPANT_GLOBAL)
     @RequiresBoardOpen
     fun putLike(
         @PathVariable boardId: String,
@@ -213,7 +214,7 @@ class PlaceController(
     @ApiResponse(responseCode = "403", description = "다른 보드의 토큰")
     @ApiResponse(responseCode = "404", description = "보드 또는 장소 없음")
     @ApiResponse(responseCode = "409", description = "보드가 종료됨")
-    @RateLimit(permits = 60, windowSeconds = 60, key = RateLimitKey.PARTICIPANT, scope = RateLimitScope.PARTICIPANT_GLOBAL)
+    @RateLimit(permits = 1200, windowSeconds = 60, key = RateLimitKey.PARTICIPANT, scope = RateLimitScope.PARTICIPANT_GLOBAL)
     @RequiresBoardOpen
     fun deleteLike(
         @PathVariable boardId: String,

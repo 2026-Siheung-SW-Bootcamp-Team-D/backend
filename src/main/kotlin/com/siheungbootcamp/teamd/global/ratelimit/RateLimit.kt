@@ -7,7 +7,9 @@ annotation class RateLimit(
     val windowSeconds: Long,
     val key: RateLimitKey,
     val scope: RateLimitScope = RateLimitScope.ENDPOINT,
+    val bucket: RateLimitBucket = RateLimitBucket.GENERAL,
 )
 
 enum class RateLimitKey { PARTICIPANT, BOARD, IP }
 enum class RateLimitScope { ENDPOINT, PARTICIPANT_GLOBAL }
+enum class RateLimitBucket { GENERAL, EXTERNAL, LIVE_LOCATION }

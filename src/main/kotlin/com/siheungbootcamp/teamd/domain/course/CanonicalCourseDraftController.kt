@@ -40,7 +40,7 @@ class CanonicalCourseDraftController(private val service: CourseService) {
     @SecurityRequirement(name = "participantToken")
     @ApiResponse(responseCode = "200", description = "조회 성공")
     @ApiResponse(responseCode = "404", description = "다른 보드의 토큰(존재 숨김)")
-    @RateLimit(permits = 60, windowSeconds = 60, key = RateLimitKey.PARTICIPANT, scope = RateLimitScope.PARTICIPANT_GLOBAL)
+    @RateLimit(permits = 1200, windowSeconds = 60, key = RateLimitKey.PARTICIPANT, scope = RateLimitScope.PARTICIPANT_GLOBAL)
     fun getDraft(
         @PathVariable boardId: String,
         @Parameter(hidden = true) @CurrentParticipant principal: ParticipantPrincipal,
@@ -57,7 +57,7 @@ class CanonicalCourseDraftController(private val service: CourseService) {
     @ApiResponse(responseCode = "404", description = "다른 보드·삭제된 장소 또는 다른 보드의 토큰")
     @ApiResponse(responseCode = "412", description = "If-Match 버전 불일치(최신 ETag 헤더 포함)")
     @RequiresBoardOpen
-    @RateLimit(permits = 60, windowSeconds = 60, key = RateLimitKey.PARTICIPANT, scope = RateLimitScope.PARTICIPANT_GLOBAL)
+    @RateLimit(permits = 1200, windowSeconds = 60, key = RateLimitKey.PARTICIPANT, scope = RateLimitScope.PARTICIPANT_GLOBAL)
     fun putDraft(
         @PathVariable boardId: String,
         @RequestHeader(value = "If-Match", required = false) ifMatch: String?,
