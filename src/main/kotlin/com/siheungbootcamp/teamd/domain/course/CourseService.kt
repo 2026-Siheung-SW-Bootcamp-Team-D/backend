@@ -10,6 +10,10 @@ import com.siheungbootcamp.teamd.global.auth.AuthorizationChecks
 import com.siheungbootcamp.teamd.global.auth.ParticipantPrincipal
 import com.siheungbootcamp.teamd.global.error.BusinessException
 import com.siheungbootcamp.teamd.global.error.ErrorCode
+import com.siheungbootcamp.teamd.global.sse.BoardEventPublisher
+import org.springframework.transaction.support.TransactionSynchronization
+import org.springframework.transaction.support.TransactionSynchronizationManager
+import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import tools.jackson.databind.ObjectMapper
@@ -37,7 +41,25 @@ class CourseService(
     private val staleNotifier: DepartureStaleNotifier,
     private val publicTokenGenerator: PublicTokenGenerator,
     private val objectMapper: ObjectMapper,
+    private val events: BoardEventPublisher,
 ) {
+    private val log = LoggerFactory.getLogger(CourseService::class.java)
+
+    /** 커밋 이후에만 SSE 신호를 보낸다. */
+    private fun notifyAfterCommit(boardId: String, resource: String) {
+        TransactionSynchronizationManager.registerSynchronization(
+            object : TransactionSynchronization {
+                override fun afterCommit() {
+                    try {
+                        events.publish(boardId, resource)
+                    } catch (e: Exception) {
+                        log.warn("SSE 발행 실패: boardId={}, resource={}", boardId, resource, e)
+                    }
+                }
+            },
+        )
+    }
+
     fun getDraft(boardId: String, principal: ParticipantPrincipal): CourseDraftResponse {
         checks.requireBoard(principal, boardId)
         val board = findBoard(boardId)
@@ -87,6 +109,7 @@ class CourseService(
             }
         }
 
+        notifyAfterCommit(board.publicId, "course")
         return buildDraftResponse(boardIdInternal, savedVersion, newEntries)
     }
 
@@ -119,6 +142,7 @@ class CourseService(
         }
         drafts.flush()
 
+        notifyAfterCommit(board.publicId, "course")
         return buildDraftResponse(boardIdInternal, saved.version, newEntries)
     }
 
@@ -160,6 +184,7 @@ class CourseService(
         }
         boards.flush()
 
+        notifyAfterCommit(board.publicId, "course")
         return ConfirmCourseResponse(
             courseId = course.publicId,
             version = newVersion,
