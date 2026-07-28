@@ -203,13 +203,13 @@ class P1ContractTest(
     }
 
     @Test
-    fun `참여자 전체 60회 제한은 여러 엔드포인트가 같은 버킷을 사용한다`() {
+    fun `참여자 일반 API는 분당 1200회까지 여러 엔드포인트에서 사용할 수 있다`() {
         val host = createBoard("제한 보드", "호스트")
-        val rateLimited = (1..70).any { requestNumber ->
+        val rateLimited = (1..1200).any { requestNumber ->
             val path = if (requestNumber % 2 == 0) "/api/v1/boards/${host.boardId}" else "/api/v1/boards/${host.boardId}/participants"
             mockMvc.get(path) { bearer(host.token) }.andReturn().response.status == 429
         }
-        assertTrue(rateLimited, "서로 다른 보호 API가 참여자 전체 버킷을 공유해야 한다")
+        assertFalse(rateLimited, "일반 API는 분당 1200회까지 차단하지 않아야 한다")
     }
 
     @Test
