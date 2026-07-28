@@ -5,6 +5,7 @@ import com.siheungbootcamp.teamd.global.auth.ParticipantPrincipal
 import com.siheungbootcamp.teamd.global.ratelimit.RateLimit
 import com.siheungbootcamp.teamd.global.ratelimit.RateLimitKey
 import com.siheungbootcamp.teamd.global.ratelimit.RateLimitScope
+import com.siheungbootcamp.teamd.global.ratelimit.RateLimitBucket
 import jakarta.validation.Valid
 import org.springframework.boot.context.properties.ConfigurationProperties
 import org.springframework.boot.context.properties.EnableConfigurationProperties
@@ -152,7 +153,7 @@ class BoardController(
     @PutMapping("/boards/{boardId}/participants/me/live-location")
     @Operation(summary = "내 실시간 위치 갱신", description = "명시적으로 위치 공유를 시작한 참여자의 최신 위치 한 건만 짧게 보관합니다.")
     @SecurityRequirement(name = "participantToken")
-    @RateLimit(permits = 600, windowSeconds = 60, key = RateLimitKey.PARTICIPANT, scope = RateLimitScope.PARTICIPANT_GLOBAL)
+    @RateLimit(permits = 600, windowSeconds = 60, key = RateLimitKey.PARTICIPANT, scope = RateLimitScope.PARTICIPANT_GLOBAL, bucket = RateLimitBucket.LIVE_LOCATION)
     fun putLiveLocation(
         @PathVariable boardId: String,
         @Parameter(hidden = true) @CurrentParticipant principal: ParticipantPrincipal,
@@ -165,7 +166,7 @@ class BoardController(
     @DeleteMapping("/boards/{boardId}/participants/me/live-location")
     @Operation(summary = "내 실시간 위치 공유 중지")
     @SecurityRequirement(name = "participantToken")
-    @RateLimit(permits = 600, windowSeconds = 60, key = RateLimitKey.PARTICIPANT, scope = RateLimitScope.PARTICIPANT_GLOBAL)
+    @RateLimit(permits = 600, windowSeconds = 60, key = RateLimitKey.PARTICIPANT, scope = RateLimitScope.PARTICIPANT_GLOBAL, bucket = RateLimitBucket.LIVE_LOCATION)
     fun deleteLiveLocation(
         @PathVariable boardId: String,
         @Parameter(hidden = true) @CurrentParticipant principal: ParticipantPrincipal,
@@ -177,7 +178,7 @@ class BoardController(
     @GetMapping("/boards/{boardId}/live-locations")
     @Operation(summary = "보드 참여자의 최신 실시간 위치 조회")
     @SecurityRequirement(name = "participantToken")
-    @RateLimit(permits = 600, windowSeconds = 60, key = RateLimitKey.PARTICIPANT, scope = RateLimitScope.PARTICIPANT_GLOBAL)
+    @RateLimit(permits = 600, windowSeconds = 60, key = RateLimitKey.PARTICIPANT, scope = RateLimitScope.PARTICIPANT_GLOBAL, bucket = RateLimitBucket.LIVE_LOCATION)
     fun liveLocations(
         @PathVariable boardId: String,
         @Parameter(hidden = true) @CurrentParticipant principal: ParticipantPrincipal,
