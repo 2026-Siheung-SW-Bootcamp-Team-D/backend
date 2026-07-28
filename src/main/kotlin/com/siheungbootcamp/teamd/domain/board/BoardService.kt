@@ -4,9 +4,13 @@ import com.siheungbootcamp.teamd.global.auth.*
 import com.siheungbootcamp.teamd.global.crypto.OriginCipher
 import com.siheungbootcamp.teamd.global.error.BusinessException
 import com.siheungbootcamp.teamd.global.error.ErrorCode
+import com.siheungbootcamp.teamd.global.sse.BoardEventPublisher
+import org.slf4j.LoggerFactory
 import org.springframework.jdbc.core.simple.JdbcClient
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
+import org.springframework.transaction.support.TransactionSynchronization
+import org.springframework.transaction.support.TransactionSynchronizationManager
 import java.nio.ByteBuffer
 import java.time.Clock
 import java.time.Instant
@@ -27,7 +31,27 @@ class BoardService(
     private val staleNotifier: DepartureStaleNotifier,
     private val checks: AuthorizationChecks,
     private val jdbc: JdbcClient,
+    private val events: BoardEventPublisher,
 ) {
+    private val log = LoggerFactory.getLogger(BoardService::class.java)
+
+    /**
+     * 커밋 이후에만 SSE 신호를 보낸다. 커밋 전에 보내면 프론트가 `reload()`로 REST를
+     * 다시 조회했을 때 아직 반영되지 않은 옛 데이터를 읽게 된다.
+     */
+    private fun notifyAfterCommit(boardId: String, resource: String) {
+        TransactionSynchronizationManager.registerSynchronization(
+            object : TransactionSynchronization {
+                override fun afterCommit() {
+                    try {
+                        events.publish(boardId, resource)
+                    } catch (e: Exception) {
+                        log.warn("SSE 발행 실패: boardId={}, resource={}", boardId, resource, e)
+                    }
+                }
+            },
+        )
+    }
     private val clock: Clock = Clock.system(ZoneId.of("Asia/Seoul"))
     private val colors = listOf("#4A90E2", "#50B87A", "#F5A623", "#9B51E0")
 
@@ -55,6 +79,7 @@ class BoardService(
         if (board.status == BoardStatus.CLOSED) conflict()
         board.update(request.name?.let { normalized(it, 2, 40) }, request.purpose)
         boards.flush()
+        notifyAfterCommit(board.publicId, "board")
         return BoardResponse(board.publicId, board.name, board.purpose, board.status, counts = counts(board), updatedAt = board.updatedAt)
     }
 
@@ -72,10 +97,15 @@ class BoardService(
     fun join(code: String, request: JoinRequest): JoinResponse {
         val board = validInvitationForUpdate(code)
         if (board.status == BoardStatus.CLOSED) conflict()
+        val boardId = requireNotNull(board.id)
+        if (participants.countByBoardIdAndActiveTrue(boardId) >= 10) {
+            throw BusinessException(ErrorCode.PARTICIPANT_LIMIT_REACHED)
+        }
         val publicId = com.siheungbootcamp.teamd.global.id.PublicId.generate(com.siheungbootcamp.teamd.global.id.IdPrefix.PARTICIPANT)
         val token = ParticipantToken.generate(publicId)
-        val count = participants.countByBoardId(requireNotNull(board.id)).toInt()
+        val count = participants.countByBoardId(boardId).toInt()
         val participant = participants.save(Participant(publicId, board, normalized(request.nickname, 1, 20), ParticipantRole.MEMBER, tokenHasher.hash(token.secret), colors[count % colors.size]))
+        notifyAfterCommit(board.publicId, "participants")
         return JoinResponse(board.publicId, participant.publicId, participant.nickname, participant.role.name, participant.avatarColor, token.value)
     }
 
@@ -104,6 +134,7 @@ class BoardService(
             staleNotifier.markStale(requireNotNull(participant.id))
         }
         val point = participant.originCiphertext?.let(::decryptOrigin)
+        notifyAfterCommit(board.publicId, "participants")
         return ParticipantResponse(participant.publicId, participant.nickname, participant.role.name, participant.avatarColor,
             OriginResponse(point != null, participant.originLabel, point?.first, point?.second))
     }
@@ -120,6 +151,7 @@ class BoardService(
             throw BusinessException(ErrorCode.INVALID_ARGUMENT)
         }
         target.deactivate()
+        notifyAfterCommit(board.publicId, "participants")
     }
 
     @Transactional
@@ -142,6 +174,7 @@ class BoardService(
 
         board.select(placeIdInternal, principal.participantId, Instant.now(clock))
         boards.flush()
+        notifyAfterCommit(board.publicId, "board")
         return toResponseWithSelection(board)
     }
 
@@ -152,6 +185,7 @@ class BoardService(
         if (board.status == BoardStatus.CLOSED) conflict()
         board.clearSelection(principal.participantId, Instant.now(clock))
         boards.flush()
+        notifyAfterCommit(board.publicId, "board")
     }
 
     private fun toResponseWithSelection(b: Board): BoardResponse {

@@ -11,6 +11,9 @@ spring:
     open-in-view: false
   flyway:
     enabled: true
+  mvc:
+    async:
+      request-timeout: -1
 management:
   endpoints:
     web:

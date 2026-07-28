@@ -9,6 +9,11 @@ import tools.jackson.databind.ObjectMapper
 import tools.jackson.databind.node.ObjectNode
 import java.time.Instant
 
+import com.siheungbootcamp.teamd.domain.board.BoardRepository
+import com.siheungbootcamp.teamd.global.sse.BoardEventPublisher
+import org.springframework.transaction.support.TransactionSynchronization
+import org.springframework.transaction.support.TransactionSynchronizationManager
+
 /**
  * 지역 탐색 작업(AreaSearchJob)의 상태 변경을 담당하는 전담 빈.
  *
@@ -22,9 +27,26 @@ import java.time.Instant
 class AreaJobStateWriter(
     private val jobRepository: AreaSearchJobRepository,
     private val candidateRepository: AreaSuggestionRepository,
+    private val boardRepository: BoardRepository,
     private val mapper: ObjectMapper,
+    private val events: BoardEventPublisher,
 ) {
     private val logger = LoggerFactory.getLogger(javaClass)
+
+    /** 커밋 이후에만 SSE 신호를 보낸다. */
+    private fun notifyAfterCommit(boardId: String, resource: String) {
+        TransactionSynchronizationManager.registerSynchronization(
+            object : TransactionSynchronization {
+                override fun afterCommit() {
+                    try {
+                        events.publish(boardId, resource)
+                    } catch (e: Exception) {
+                        logger.warn("SSE 발행 실패: boardId={}, resource={}", boardId, resource, e)
+                    }
+                }
+            },
+        )
+    }
 
     /**
      * 다음 처리할 작업을 원자적으로 조회하고 RUNNING 상태로 표시한다.
@@ -166,6 +188,9 @@ class AreaJobStateWriter(
 
         job.markSucceeded(result)
         jobRepository.save(job)
+        boardRepository.findById(job.boardId).ifPresent { board ->
+            notifyAfterCommit(board.publicId, "area")
+        }
     }
 
     /**

@@ -8,10 +8,14 @@ import com.siheungbootcamp.teamd.global.web.PageResponse
 import com.siheungbootcamp.teamd.domain.board.BoardRepository
 import com.siheungbootcamp.teamd.domain.board.ParticipantRepository
 import com.siheungbootcamp.teamd.domain.comment.CommentRepository
+import com.siheungbootcamp.teamd.global.sse.BoardEventPublisher
 import com.siheungbootcamp.teamd.infra.external.kakao.KakaoLocalClient
+import org.slf4j.LoggerFactory
 import org.springframework.data.domain.Pageable
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
+import org.springframework.transaction.support.TransactionSynchronization
+import org.springframework.transaction.support.TransactionSynchronizationManager
 import java.net.URI
 
 /**
@@ -31,8 +35,25 @@ class PlaceService(
     private val likes: PlaceLikeRepository,
     private val kakao: KakaoLocalClient,
     private val checks: AuthorizationChecks,
+    private val events: BoardEventPublisher,
     private val usageCheckers: List<PlaceUsageChecker> = emptyList(),
 ) {
+    private val log = LoggerFactory.getLogger(PlaceService::class.java)
+
+    /** [com.siheungbootcamp.teamd.domain.board.BoardService]와 같은 이유로 커밋 이후에만 SSE 신호를 보낸다. */
+    private fun notifyAfterCommit(boardId: String, resource: String) {
+        TransactionSynchronizationManager.registerSynchronization(
+            object : TransactionSynchronization {
+                override fun afterCommit() {
+                    try {
+                        events.publish(boardId, resource)
+                    } catch (e: Exception) {
+                        log.warn("SSE 발행 실패: boardId={}, resource={}", boardId, resource, e)
+                    }
+                }
+            },
+        )
+    }
     fun searchKeyword(
         boardId: String,
         principal: ParticipantPrincipal,
@@ -235,6 +256,7 @@ class PlaceService(
         val saved = places.save(place)
         val placeId_internal = saved.id ?: throw BusinessException(ErrorCode.INTERNAL_ERROR)
         val commentCount = comments.countByPlaceIdAndNotDeleted(placeId_internal).toInt()
+        notifyAfterCommit(boardId, "places")
         return toResponse(saved, commentCount, 0, false, false)
     }
 
@@ -361,6 +383,7 @@ class PlaceService(
 
         place.softDelete()
         places.save(place)
+        notifyAfterCommit(boardId, "places")
     }
 
     private fun toResponse(place: Place, commentCount: Int, likeCount: Int = 0, likedByMe: Boolean = false, selected: Boolean = false): PlaceResponse {
@@ -424,6 +447,7 @@ class PlaceService(
         // 멱등성: INSERT ... ON CONFLICT DO NOTHING으로 동시성 경쟁(race condition) 없이 처리
         // 이미 좋아요되어 있으면 무시하고, 없으면 생성한다.
         likes.insertOrIgnore(placeId_internal, principal.participantId)
+        notifyAfterCommit(boardId, "places")
     }
 
     @Transactional
@@ -438,6 +462,7 @@ class PlaceService(
 
         // 멱등성: 없어도 성공 반환
         likes.deleteByPlaceIdAndParticipantId(placeId_internal, principal.participantId)
+        notifyAfterCommit(boardId, "places")
     }
 
     private fun requireBoardParticipant(boardId: String, principal: ParticipantPrincipal) {
